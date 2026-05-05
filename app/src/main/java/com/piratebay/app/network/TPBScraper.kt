@@ -78,11 +78,6 @@ class TPBScraper {
         "699" to "Other Other"
     )
     
-    data class RawTorrent(
-        val item: TorrentItem,
-        val categoryCode: String
-    )
-    
     suspend fun search(query: String, category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
             try {
@@ -118,7 +113,8 @@ class TPBScraper {
             for (i in 0 until jsonArray.length()) {
                 val item = jsonArray.getJSONObject(i)
                 
-                val id = item.getString("id")
+                if (item.getString("id") == "0") continue
+                
                 val name = item.getString("name")
                 val infoHash = item.getString("info_hash")
                 val seeders = item.getString("seeders")
@@ -144,54 +140,6 @@ class TPBScraper {
                         uploadDate = uploadDate,
                         uploader = username,
                         category = categoryName
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        
-        return torrents
-    }
-    
-    private fun parseJsonResponseWithCategory(json: String): List<RawTorrent> {
-        val torrents = mutableListOf<RawTorrent>()
-        
-        try {
-            val jsonArray = JSONArray(json)
-            
-            for (i in 0 until jsonArray.length()) {
-                val item = jsonArray.getJSONObject(i)
-                
-                val id = item.getString("id")
-                val name = item.getString("name")
-                val infoHash = item.getString("info_hash")
-                val seeders = item.getString("seeders")
-                val leechers = item.getString("leechers")
-                val sizeBytes = item.getString("size").toLongOrNull() ?: 0
-                val username = item.getString("username")
-                val added = item.getString("added").toLongOrNull() ?: 0
-                val category = item.getString("category")
-                
-                val magnetLink = buildMagnetLink(infoHash, name)
-                
-                val size = formatSize(sizeBytes)
-                val uploadDate = formatDate(added)
-                val categoryName = categoryMap[category] ?: "Other"
-                
-                torrents.add(
-                    RawTorrent(
-                        item = TorrentItem(
-                            title = name,
-                            magnetLink = magnetLink,
-                            size = size,
-                            seeders = seeders,
-                            leechers = leechers,
-                            uploadDate = uploadDate,
-                            uploader = username,
-                            category = categoryName
-                        ),
-                        categoryCode = category
                     )
                 )
             }
@@ -236,7 +184,11 @@ class TPBScraper {
     suspend fun getTopTorrents(category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
             try {
-                val topUrl = "$apiUrl/precompiled/data_top100_all.json"
+                val topUrl = if (category == "0") {
+                    "$apiUrl/precompiled/data_top100_all.json"
+                } else {
+                    "$apiUrl/precompiled/data_top100_$category.json"
+                }
                 
                 val request = Request.Builder()
                     .url(topUrl)
@@ -250,13 +202,7 @@ class TPBScraper {
                 }
                 
                 val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                var rawTorrents = parseJsonResponseWithCategory(json)
-                
-                if (category != "0") {
-                    rawTorrents = rawTorrents.filter { it.categoryCode == category }
-                }
-                
-                val torrents = rawTorrents.map { it.item }.take(100)
+                val torrents = parseJsonResponse(json)
                 Result.success(torrents)
             } catch (e: Exception) {
                 Result.failure(e)
