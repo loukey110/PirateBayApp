@@ -8,16 +8,26 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import com.piratebay.app.R
 import com.piratebay.app.model.TorrentItem
+import com.piratebay.app.network.TranslationService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TorrentAdapter(
     private val context: Context,
     private val torrents: MutableList<TorrentItem>
 ) : RecyclerView.Adapter<TorrentAdapter.TorrentViewHolder>() {
+
+    private val translationService = TranslationService(context)
+    private val originalTitles = mutableMapOf<Int, String>()
+    private val translatedTitles = mutableMapOf<Int, String>()
 
     class TorrentViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val titleTextView: TextView = view.findViewById(R.id.titleTextView)
@@ -28,6 +38,7 @@ class TorrentAdapter(
         val uploaderTextView: TextView = view.findViewById(R.id.uploaderTextView)
         val copyMagnetButton: Button = view.findViewById(R.id.copyMagnetButton)
         val shareButton: Button = view.findViewById(R.id.shareButton)
+        val translateButton: ImageButton = view.findViewById(R.id.translateButton)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TorrentViewHolder {
@@ -39,12 +50,34 @@ class TorrentAdapter(
     override fun onBindViewHolder(holder: TorrentViewHolder, position: Int) {
         val torrent = torrents[position]
         
-        holder.titleTextView.text = torrent.title
+        originalTitles[position] = torrent.title
+        
+        if (translatedTitles.containsKey(position)) {
+            holder.titleTextView.text = translatedTitles[position]
+        } else {
+            holder.titleTextView.text = torrent.title
+        }
+        
         holder.sizeTextView.text = torrent.size
         holder.seedersTextView.text = "种子: ${torrent.seeders}"
         holder.leechersTextView.text = "下载: ${torrent.leechers}"
         holder.dateTextView.text = torrent.uploadDate
         holder.uploaderTextView.text = "上传者: ${torrent.uploader}"
+        
+        holder.translateButton.setOnClickListener {
+            if (!translationService.isConfigured()) {
+                Toast.makeText(context, "请先配置百度翻译API密钥", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            
+            if (translatedTitles.containsKey(position)) {
+                holder.titleTextView.text = originalTitles[position]
+                translatedTitles.remove(position)
+                Toast.makeText(context, "已恢复原文", Toast.LENGTH_SHORT).show()
+            } else {
+                translateTitle(position, holder)
+            }
+        }
         
         holder.copyMagnetButton.setOnClickListener {
             copyToClipboard(torrent.magnetLink, "磁力链接")
@@ -64,20 +97,36 @@ class TorrentAdapter(
 
     override fun getItemCount() = torrents.size
 
-    fun updateData(newTorrents: List<TorrentItem>) {
-        torrents.clear()
-        torrents.addAll(newTorrents)
-        notifyDataSetChanged()
-    }
-
-    fun clear() {
-        torrents.clear()
-        notifyDataSetChanged()
+    private fun translateTitle(position: Int, holder: TorrentViewHolder) {
+        val title = originalTitles[position] ?: return
+        
+        CoroutineScope(Dispatchers.Main).launch {
+            holder.translateButton.isEnabled = false
+            holder.translateButton.alpha = 0.5f
+            
+            val result = translationService.translate(title)
+            
+            holder.translateButton.isEnabled = true
+            holder.translateButton.alpha = 1f
+            
+            result.fold(
+                onSuccess = { translated ->
+                    translatedTitles[position] = translated
+                    holder.titleTextView.text = translated
+                    Toast.makeText(context, "翻译完成", Toast.LENGTH_SHORT).show()
+                },
+                onFailure = { error ->
+                    Toast.makeText(context, "翻译失败: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
     }
 
     fun updateAndSort(newTorrents: List<TorrentItem>, sortType: Int) {
         torrents.clear()
         torrents.addAll(newTorrents)
+        originalTitles.clear()
+        translatedTitles.clear()
         
         when (sortType) {
             1 -> {
@@ -112,6 +161,21 @@ class TorrentAdapter(
             }
         }
         
+        notifyDataSetChanged()
+    }
+
+    fun updateData(newTorrents: List<TorrentItem>) {
+        torrents.clear()
+        torrents.addAll(newTorrents)
+        originalTitles.clear()
+        translatedTitles.clear()
+        notifyDataSetChanged()
+    }
+
+    fun clear() {
+        torrents.clear()
+        originalTitles.clear()
+        translatedTitles.clear()
         notifyDataSetChanged()
     }
 
