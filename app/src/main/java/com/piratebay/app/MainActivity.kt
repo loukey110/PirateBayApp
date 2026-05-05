@@ -77,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupListeners()
         
-        loadTopTorrents()
+        showInitial()
     }
 
     private fun showSettingsDialog() {
@@ -183,7 +183,7 @@ class MainActivity : AppCompatActivity() {
             if (currentQuery.isNotEmpty()) {
                 performSearch()
             } else {
-                loadTopTorrents()
+                swipeRefreshLayout.isRefreshing = false
             }
         }
         
@@ -201,15 +201,10 @@ class MainActivity : AppCompatActivity() {
         }
         
         currentQuery = query
+        currentTorrents = emptyList()
+        adapter.clear()
+        
         search(query, currentCategory)
-    }
-
-    private fun loadTopTorrents() {
-        showLoading()
-        lifecycleScope.launch {
-            val result = scraper.getTopTorrents("all")
-            handleResult(result)
-        }
     }
 
     private fun search(query: String, category: String) {
@@ -244,6 +239,14 @@ class MainActivity : AppCompatActivity() {
         adapter.updateAndSort(currentTorrents, currentSort)
     }
 
+    private fun showInitial() {
+        progressBar.visibility = View.GONE
+        emptyView.visibility = View.VISIBLE
+        emptyView.text = "输入关键词搜索"
+        errorView.visibility = View.GONE
+        torrentsRecyclerView.visibility = View.GONE
+    }
+
     private fun showLoading() {
         progressBar.visibility = View.VISIBLE
         emptyView.visibility = View.GONE
@@ -258,6 +261,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showEmpty() {
         emptyView.visibility = View.VISIBLE
+        emptyView.text = "没有找到结果"
         errorView.visibility = View.GONE
         torrentsRecyclerView.visibility = View.GONE
     }
