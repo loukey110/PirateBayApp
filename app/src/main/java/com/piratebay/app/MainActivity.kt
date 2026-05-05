@@ -194,16 +194,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun applySort() {
         if (currentTorrents.isEmpty()) return
-        
-        when (currentSort) {
-            0 -> adapter.updateData(currentTorrents)
-            1 -> adapter.sortByDate(descending = false)
-            2 -> adapter.sortByDate(descending = true)
-            3 -> adapter.sortBySize(descending = false)
-            4 -> adapter.sortBySize(descending = true)
-            5 -> adapter.sortBySeeders(descending = false)
-            6 -> adapter.sortBySeeders(descending = true)
-        }
+        adapter.updateAndSort(currentTorrents, currentSort)
     }
 
     private fun showLoading() {

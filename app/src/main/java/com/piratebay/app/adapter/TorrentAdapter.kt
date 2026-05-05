@@ -75,6 +75,46 @@ class TorrentAdapter(
         notifyDataSetChanged()
     }
 
+    fun updateAndSort(newTorrents: List<TorrentItem>, sortType: Int) {
+        torrents.clear()
+        torrents.addAll(newTorrents)
+        
+        when (sortType) {
+            1 -> {
+                val sorted = torrents.sortedBy { parseDate(it.uploadDate) }
+                torrents.clear()
+                torrents.addAll(sorted)
+            }
+            2 -> {
+                val sorted = torrents.sortedByDescending { parseDate(it.uploadDate) }
+                torrents.clear()
+                torrents.addAll(sorted)
+            }
+            3 -> {
+                val sorted = torrents.sortedBy { parseSize(it.size) }
+                torrents.clear()
+                torrents.addAll(sorted)
+            }
+            4 -> {
+                val sorted = torrents.sortedByDescending { parseSize(it.size) }
+                torrents.clear()
+                torrents.addAll(sorted)
+            }
+            5 -> {
+                val sorted = torrents.sortedBy { it.seeders.toIntOrNull() ?: 0 }
+                torrents.clear()
+                torrents.addAll(sorted)
+            }
+            6 -> {
+                val sorted = torrents.sortedByDescending { it.seeders.toIntOrNull() ?: 0 }
+                torrents.clear()
+                torrents.addAll(sorted)
+            }
+        }
+        
+        notifyDataSetChanged()
+    }
+
     fun sortByDate(descending: Boolean = true) {
         val sorted = torrents.sortedByDescending { 
             parseDate(it.uploadDate) 
