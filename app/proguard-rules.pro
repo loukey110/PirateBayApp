@@ -1,0 +1,2 @@
+-keep class com.piratebay.app.model.** { *; }
+-keep class com.piratebay.app.network.** { *; }
