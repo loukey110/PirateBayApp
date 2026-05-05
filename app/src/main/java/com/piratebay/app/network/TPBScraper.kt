@@ -22,6 +22,17 @@ class TPBScraper {
     
     private val apiUrl = "https://apibay.org"
     
+    private val trackers = listOf(
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.stealth.si:80/announce",
+        "udp://tracker.torrent.eu.org:451/announce",
+        "udp://tracker.bittor.pw:1337/announce",
+        "udp://public.popcorn-tracker.org:6969/announce",
+        "udp://tracker.dler.org:6969/announce",
+        "udp://exodus.desync.com:6969/announce",
+        "udp://open.demonii.com:1337/announce"
+    )
+    
     private val categoryMap = mapOf(
         "0" to "All",
         "101" to "Audio",
@@ -112,7 +123,7 @@ class TPBScraper {
                 val added = item.getString("added").toLongOrNull() ?: 0
                 val category = item.getString("category")
                 
-                val magnetLink = "magnet:?xt=urn:btih:$infoHash&dn=${java.net.URLEncoder.encode(name, "UTF-8")}"
+                val magnetLink = buildMagnetLink(infoHash, name)
                 
                 val size = formatSize(sizeBytes)
                 val uploadDate = formatDate(added)
@@ -136,6 +147,18 @@ class TPBScraper {
         }
         
         return torrents
+    }
+    
+    private fun buildMagnetLink(infoHash: String, name: String): String {
+        val encodedName = URLEncoder.encode(name, "UTF-8")
+        val sb = StringBuilder()
+        sb.append("magnet:?xt=urn:btih:$infoHash&dn=$encodedName")
+        
+        for (tracker in trackers) {
+            sb.append("&tr=").append(URLEncoder.encode(tracker, "UTF-8"))
+        }
+        
+        return sb.toString()
     }
     
     private fun formatSize(bytes: Long): String {
