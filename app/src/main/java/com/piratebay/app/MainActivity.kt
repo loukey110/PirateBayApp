@@ -2,8 +2,6 @@ package com.piratebay.app
 
 import android.app.AlertDialog
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -33,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     
     private lateinit var searchEditText: EditText
     private lateinit var searchButton: ImageButton
+    private lateinit var settingsButton: ImageButton
     private lateinit var categorySpinner: Spinner
     private lateinit var sortSpinner: Spinner
     private lateinit var torrentsRecyclerView: RecyclerView
@@ -81,21 +80,6 @@ class MainActivity : AppCompatActivity() {
         loadTopTorrents()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        menuInflater.inflate(R.menu.main_menu, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_settings -> {
-                showSettingsDialog()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
     private fun showSettingsDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_settings, null)
         
@@ -134,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         searchEditText = findViewById(R.id.searchEditText)
         searchButton = findViewById(R.id.searchButton)
+        settingsButton = findViewById(R.id.settingsButton)
         categorySpinner = findViewById(R.id.categorySpinner)
         sortSpinner = findViewById(R.id.sortSpinner)
         torrentsRecyclerView = findViewById(R.id.torrentsRecyclerView)
@@ -183,6 +168,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupListeners() {
         searchButton.setOnClickListener {
             performSearch()
+        }
+        
+        settingsButton.setOnClickListener {
+            showSettingsDialog()
         }
         
         searchEditText.setOnEditorActionListener { _, _, _ ->

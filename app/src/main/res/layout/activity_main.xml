@@ -50,6 +50,16 @@
                     android:tint="#ffffff"
                     android:contentDescription="搜索" />
 
+                <ImageButton
+                    android:id="@+id/settingsButton"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/button_secondary_background"
+                    android:src="@android:drawable/ic_menu_manage"
+                    android:tint="#ffffff"
+                    android:contentDescription="设置" />
+
             </LinearLayout>
 
             <LinearLayout
