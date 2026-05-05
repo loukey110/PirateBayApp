@@ -72,8 +72,20 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
                     android:background="@drawable/spinner_background"
                     android:padding="12dp" />
+
+                <Button
+                    android:id="@+id/topButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/button_background"
+                    android:text="Top 100"
+                    android:textColor="#ffffff"
+                    android:textSize="13sp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
 
             </LinearLayout>
 

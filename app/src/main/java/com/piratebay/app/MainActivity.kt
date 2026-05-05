@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
@@ -26,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     
     private lateinit var searchEditText: EditText
     private lateinit var searchButton: ImageButton
+    private lateinit var topButton: Button
     private lateinit var categorySpinner: Spinner
     private lateinit var sortSpinner: Spinner
     private lateinit var torrentsRecyclerView: RecyclerView
@@ -76,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         searchEditText = findViewById(R.id.searchEditText)
         searchButton = findViewById(R.id.searchButton)
+        topButton = findViewById(R.id.topButton)
         categorySpinner = findViewById(R.id.categorySpinner)
         sortSpinner = findViewById(R.id.sortSpinner)
         torrentsRecyclerView = findViewById(R.id.torrentsRecyclerView)
@@ -87,8 +90,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupCategorySpinner() {
         val categoryNames = categories.keys.toList()
-        val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categoryNames)
-        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val spinnerAdapter = ArrayAdapter(this, R.layout.spinner_item, categoryNames)
+        spinnerAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         categorySpinner.adapter = spinnerAdapter
         
         categorySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -102,8 +105,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSortSpinner() {
-        val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, sortOptions)
-        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val spinnerAdapter = ArrayAdapter(this, R.layout.spinner_item, sortOptions)
+        spinnerAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         sortSpinner.adapter = spinnerAdapter
         
         sortSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -125,6 +128,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupListeners() {
         searchButton.setOnClickListener {
             performSearch()
+        }
+        
+        topButton.setOnClickListener {
+            loadTop100()
         }
         
         searchEditText.setOnEditorActionListener { _, _, _ ->
@@ -158,6 +165,18 @@ class MainActivity : AppCompatActivity() {
         adapter.clear()
         
         search(query, currentCategory)
+    }
+
+    private fun loadTop100() {
+        currentQuery = ""
+        currentTorrents = emptyList()
+        adapter.clear()
+        
+        showLoading()
+        lifecycleScope.launch {
+            val result = scraper.getTopTorrents(currentCategory)
+            handleResult(result)
+        }
     }
 
     private fun search(query: String, category: String) {
@@ -195,7 +214,7 @@ class MainActivity : AppCompatActivity() {
     private fun showInitial() {
         progressBar.visibility = View.GONE
         emptyView.visibility = View.VISIBLE
-        emptyView.text = "输入关键词搜索"
+        emptyView.text = "输入关键词搜索或点击 Top 100"
         errorView.visibility = View.GONE
         torrentsRecyclerView.visibility = View.GONE
     }

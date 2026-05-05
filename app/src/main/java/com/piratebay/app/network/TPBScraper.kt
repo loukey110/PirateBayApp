@@ -78,6 +78,11 @@ class TPBScraper {
         "699" to "Other Other"
     )
     
+    data class RawTorrent(
+        val item: TorrentItem,
+        val categoryCode: String
+    )
+    
     suspend fun search(query: String, category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
             try {
@@ -149,6 +154,54 @@ class TPBScraper {
         return torrents
     }
     
+    private fun parseJsonResponseWithCategory(json: String): List<RawTorrent> {
+        val torrents = mutableListOf<RawTorrent>()
+        
+        try {
+            val jsonArray = JSONArray(json)
+            
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                
+                val id = item.getString("id")
+                val name = item.getString("name")
+                val infoHash = item.getString("info_hash")
+                val seeders = item.getString("seeders")
+                val leechers = item.getString("leechers")
+                val sizeBytes = item.getString("size").toLongOrNull() ?: 0
+                val username = item.getString("username")
+                val added = item.getString("added").toLongOrNull() ?: 0
+                val category = item.getString("category")
+                
+                val magnetLink = buildMagnetLink(infoHash, name)
+                
+                val size = formatSize(sizeBytes)
+                val uploadDate = formatDate(added)
+                val categoryName = categoryMap[category] ?: "Other"
+                
+                torrents.add(
+                    RawTorrent(
+                        item = TorrentItem(
+                            title = name,
+                            magnetLink = magnetLink,
+                            size = size,
+                            seeders = seeders,
+                            leechers = leechers,
+                            uploadDate = uploadDate,
+                            uploader = username,
+                            category = categoryName
+                        ),
+                        categoryCode = category
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        return torrents
+    }
+    
     private fun buildMagnetLink(infoHash: String, name: String): String {
         val encodedName = URLEncoder.encode(name, "UTF-8")
         val sb = StringBuilder()
@@ -180,10 +233,10 @@ class TPBScraper {
         }
     }
     
-    suspend fun getTopTorrents(category: String = "all"): Result<List<TorrentItem>> {
+    suspend fun getTopTorrents(category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
             try {
-                val topUrl = "$apiUrl/precompiled/data_top100_recent.json"
+                val topUrl = "$apiUrl/precompiled/data_top100_all.json"
                 
                 val request = Request.Builder()
                     .url(topUrl)
@@ -197,22 +250,17 @@ class TPBScraper {
                 }
                 
                 val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                val torrents = parseJsonResponse(json)
+                var rawTorrents = parseJsonResponseWithCategory(json)
+                
+                if (category != "0") {
+                    val categoryPrefix = if (category.length >= 1) category.substring(0, 1) else "0"
+                    rawTorrents = rawTorrents.filter { it.categoryCode.startsWith(categoryPrefix) }
+                }
+                
+                val torrents = rawTorrents.map { it.item }.take(100)
                 Result.success(torrents)
             } catch (e: Exception) {
-                val trendingUrl = "$apiUrl/precompiled/data_top100_recent.json"
-                try {
-                    val request = Request.Builder()
-                        .url(trendingUrl)
-                        .header("User-Agent", "Mozilla/5.0")
-                        .build()
-                    val response = client.newCall(request).execute()
-                    val json = response.body?.string() ?: "[]"
-                    val torrents = parseJsonResponse(json)
-                    Result.success(torrents)
-                } catch (e2: Exception) {
-                    search("2025", "0")
-                }
+                Result.failure(e)
             }
         }
     }
