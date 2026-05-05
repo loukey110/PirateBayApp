@@ -52,15 +52,54 @@ class MainActivity : AppCompatActivity() {
     )
     
     private val top100Categories = listOf(
-        "全部" to "0",
-        "视频 - 电影" to "207",
-        "视频 - 电视剧" to "208",
-        "视频 - 其他视频" to "299",
-        "音频 - 音乐" to "101",
-        "音频 - 有声书" to "102",
-        "应用 - 软件" to "301",
-        "游戏" to "400",
-        "电子书" to "601"
+        "全部 Top 100" to "0",
+        "—— 音频 ——" to "HEADER",
+        "音乐" to "101",
+        "有声书" to "102",
+        "音效" to "103",
+        "FLAC" to "104",
+        "其他音频" to "199",
+        "—— 视频 ——" to "HEADER",
+        "电影" to "201",
+        "电影 DVDR" to "202",
+        "音乐视频" to "203",
+        "电影片段" to "204",
+        "电视剧" to "205",
+        "手持设备视频" to "206",
+        "HD 电影" to "207",
+        "HD 电视剧" to "208",
+        "3D" to "209",
+        "其他视频" to "299",
+        "—— 应用 ——" to "HEADER",
+        "应用程序" to "301",
+        "游戏 (Applications下)" to "302",
+        "手持设备应用" to "303",
+        "iOS 应用" to "304",
+        "Android 应用" to "305",
+        "其他系统" to "399",
+        "—— 游戏 ——" to "HEADER",
+        "游戏 (Games下)" to "401",
+        "PC 游戏" to "402",
+        "PS 游戏" to "403",
+        "XBOX360" to "404",
+        "Wii" to "405",
+        "手持游戏" to "406",
+        "iOS 游戏" to "407",
+        "Android 游戏" to "408",
+        "其他游戏" to "499",
+        "—— 成人 ——" to "HEADER",
+        "成人视频" to "501",
+        "成人 DVDR" to "502",
+        "成人图片" to "503",
+        "成人游戏" to "504",
+        "其他成人" to "599",
+        "—— 其他 ——" to "HEADER",
+        "电子书" to "601",
+        "漫画" to "602",
+        "图片" to "603",
+        "封面" to "604",
+        "Physibles" to "605",
+        "其他" to "699"
     )
     
     private val sortOptions = listOf(
@@ -181,13 +220,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTop100CategoryDialog() {
-        val categoryNames = top100Categories.map { it.first }.toTypedArray()
+        val displayItems = top100Categories.map { it.first }.toTypedArray()
         
         AlertDialog.Builder(this)
-            .setTitle("选择分类")
-            .setItems(categoryNames) { dialog, which ->
+            .setTitle("选择 Top 100 分类")
+            .setItems(displayItems) { dialog, which ->
                 val selectedCategory = top100Categories[which].second
-                loadTop100(selectedCategory)
+                if (selectedCategory != "HEADER") {
+                    loadTop100(selectedCategory)
+                }
                 dialog.dismiss()
             }
             .setNegativeButton("取消", null)
