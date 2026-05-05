@@ -69,11 +69,6 @@ class TorrentAdapter(
         holder.uploaderTextView.text = "上传者: ${torrent.uploader}"
         
         holder.translateButton.setOnClickListener {
-            if (!translationService.isConfigured()) {
-                Toast.makeText(context, "请先配置百度翻译API密钥", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            
             if (translatedTitles.containsKey(position)) {
                 holder.titleTextView.text = originalTitles[position]
                 translatedTitles.remove(position)
@@ -184,37 +179,6 @@ class TorrentAdapter(
         torrents.clear()
         originalTitles.clear()
         translatedTitles.clear()
-        notifyDataSetChanged()
-    }
-
-    fun sortByDate(descending: Boolean = true) {
-        val sorted = torrents.sortedByDescending { 
-            parseDate(it.uploadDate) 
-        }
-        torrents.clear()
-        torrents.addAll(sorted)
-        notifyDataSetChanged()
-    }
-
-    fun sortBySize(descending: Boolean = true) {
-        val sorted = if (descending) {
-            torrents.sortedByDescending { parseSize(it.size) }
-        } else {
-            torrents.sortedBy { parseSize(it.size) }
-        }
-        torrents.clear()
-        torrents.addAll(sorted)
-        notifyDataSetChanged()
-    }
-
-    fun sortBySeeders(descending: Boolean = true) {
-        val sorted = if (descending) {
-            torrents.sortedByDescending { it.seeders.toIntOrNull() ?: 0 }
-        } else {
-            torrents.sortedBy { it.seeders.toIntOrNull() ?: 0 }
-        }
-        torrents.clear()
-        torrents.addAll(sorted)
         notifyDataSetChanged()
     }
 

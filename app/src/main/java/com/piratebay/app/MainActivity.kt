@@ -1,17 +1,14 @@
 package com.piratebay.app
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -20,18 +17,15 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.piratebay.app.adapter.TorrentAdapter
 import com.piratebay.app.model.TorrentItem
 import com.piratebay.app.network.TPBScraper
-import com.piratebay.app.network.TranslationService
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var scraper: TPBScraper
     private lateinit var adapter: TorrentAdapter
-    private lateinit var translationService: TranslationService
     
     private lateinit var searchEditText: EditText
     private lateinit var searchButton: ImageButton
-    private lateinit var settingsButton: ImageButton
     private lateinit var categorySpinner: Spinner
     private lateinit var sortSpinner: Spinner
     private lateinit var torrentsRecyclerView: RecyclerView
@@ -69,7 +63,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         
         scraper = TPBScraper()
-        translationService = TranslationService(this)
         
         initViews()
         setupCategorySpinner()
@@ -80,45 +73,9 @@ class MainActivity : AppCompatActivity() {
         showInitial()
     }
 
-    private fun showSettingsDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_settings, null)
-        
-        val appIdEditText = dialogView.findViewById<EditText>(R.id.appIdEditText)
-        val secretKeyEditText = dialogView.findViewById<EditText>(R.id.secretKeyEditText)
-        val saveButton = dialogView.findViewById<Button>(R.id.saveButton)
-        
-        appIdEditText.setText(translationService.appId)
-        secretKeyEditText.setText(translationService.secretKey)
-        
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .create()
-        
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        
-        saveButton.setOnClickListener {
-            val appId = appIdEditText.text.toString().trim()
-            val secretKey = secretKeyEditText.text.toString().trim()
-            
-            if (appId.isEmpty() || secretKey.isEmpty()) {
-                Toast.makeText(this, "请填写完整信息", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            
-            translationService.appId = appId
-            translationService.secretKey = secretKey
-            
-            Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show()
-            dialog.dismiss()
-        }
-        
-        dialog.show()
-    }
-
     private fun initViews() {
         searchEditText = findViewById(R.id.searchEditText)
         searchButton = findViewById(R.id.searchButton)
-        settingsButton = findViewById(R.id.settingsButton)
         categorySpinner = findViewById(R.id.categorySpinner)
         sortSpinner = findViewById(R.id.sortSpinner)
         torrentsRecyclerView = findViewById(R.id.torrentsRecyclerView)
@@ -168,10 +125,6 @@ class MainActivity : AppCompatActivity() {
     private fun setupListeners() {
         searchButton.setOnClickListener {
             performSearch()
-        }
-        
-        settingsButton.setOnClickListener {
-            showSettingsDialog()
         }
         
         searchEditText.setOnEditorActionListener { _, _, _ ->

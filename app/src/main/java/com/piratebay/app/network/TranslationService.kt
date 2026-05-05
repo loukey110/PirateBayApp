@@ -1,7 +1,6 @@
 package com.piratebay.app.network
 
 import android.content.Context
-import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -18,28 +17,34 @@ class TranslationService(private val context: Context) {
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
     
-    private val prefs: SharedPreferences = 
-        context.getSharedPreferences("translation_prefs", Context.MODE_PRIVATE)
+    private val appId: String by lazy { decryptAppId() }
+    private val secretKey: String by lazy { decryptSecretKey() }
     
-    var appId: String
-        get() = prefs.getString("baidu_app_id", "") ?: ""
-        set(value) = prefs.edit().putString("baidu_app_id", value).apply()
+    fun isConfigured(): Boolean = true
     
-    var secretKey: String
-        get() = prefs.getString("baidu_secret_key", "") ?: ""
-        set(value) = prefs.edit().putString("baidu_secret_key", value).apply()
+    private fun decryptAppId(): String {
+        val parts = arrayOf("20260505", "002607", "354")
+        val xorKey = 0x1A
+        return parts.joinToString("").map { 
+            (it.code.xor(xorKey)).toChar() 
+        }.joinToString("")
+    }
     
-    fun isConfigured(): Boolean {
-        return appId.isNotEmpty() && secretKey.isNotEmpty()
+    private fun decryptSecretKey(): String {
+        val encoded = arrayOf(
+            "D", "z", "9", "0", "d", "m", "G", "M",
+            "6", "f", "o", "a", "T", "V", "O", "0",
+            "u", "d", "E", "U"
+        )
+        val xorKey = 0x2B
+        return encoded.joinToString("").map { 
+            (it.code.xor(xorKey)).toChar() 
+        }.joinToString("")
     }
     
     suspend fun translate(text: String, from: String = "en", to: String = "zh"): Result<String> {
         return withContext(Dispatchers.IO) {
             try {
-                if (!isConfigured()) {
-                    return@withContext Result.failure(Exception("请先配置百度翻译API密钥"))
-                }
-                
                 val salt = System.currentTimeMillis().toString()
                 val sign = generateSign(text, salt)
                 
