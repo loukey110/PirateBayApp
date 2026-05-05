@@ -52,13 +52,30 @@
 
             </LinearLayout>
 
-            <Spinner
-                android:id="@+id/categorySpinner"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:background="@drawable/spinner_background"
-                android:padding="12dp" />
+                android:orientation="horizontal">
+
+                <Spinner
+                    android:id="@+id/categorySpinner"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/spinner_background"
+                    android:padding="12dp" />
+
+                <Spinner
+                    android:id="@+id/sortSpinner"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/spinner_background"
+                    android:padding="12dp" />
+
+            </LinearLayout>
 
         </LinearLayout>
 

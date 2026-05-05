@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchEditText: EditText
     private lateinit var searchButton: ImageButton
     private lateinit var categorySpinner: Spinner
+    private lateinit var sortSpinner: Spinner
     private lateinit var torrentsRecyclerView: RecyclerView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var progressBar: ProgressBar
@@ -35,6 +36,8 @@ class MainActivity : AppCompatActivity() {
     
     private var currentQuery = ""
     private var currentCategory = "0"
+    private var currentSort = 0
+    private var currentTorrents: List<TorrentItem> = emptyList()
     
     private val categories = mapOf(
         "全部" to "0",
@@ -43,6 +46,16 @@ class MainActivity : AppCompatActivity() {
         "应用" to "300",
         "游戏" to "400",
         "其他" to "600"
+    )
+    
+    private val sortOptions = listOf(
+        "默认排序",
+        "时间 ↑",
+        "时间 ↓",
+        "大小 ↑",
+        "大小 ↓",
+        "种子数 ↑",
+        "种子数 ↓"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,6 +66,7 @@ class MainActivity : AppCompatActivity() {
         
         initViews()
         setupCategorySpinner()
+        setupSortSpinner()
         setupRecyclerView()
         setupListeners()
         
@@ -63,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         searchEditText = findViewById(R.id.searchEditText)
         searchButton = findViewById(R.id.searchButton)
         categorySpinner = findViewById(R.id.categorySpinner)
+        sortSpinner = findViewById(R.id.sortSpinner)
         torrentsRecyclerView = findViewById(R.id.torrentsRecyclerView)
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
         progressBar = findViewById(R.id.progressBar)
@@ -80,6 +95,21 @@ class MainActivity : AppCompatActivity() {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 val selectedCategory = categoryNames[position]
                 currentCategory = categories[selectedCategory] ?: "0"
+            }
+            
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+    }
+
+    private fun setupSortSpinner() {
+        val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, sortOptions)
+        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        sortSpinner.adapter = spinnerAdapter
+        
+        sortSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                currentSort = position
+                applySort()
             }
             
             override fun onNothingSelected(parent: AdapterView<*>) {}
@@ -151,7 +181,8 @@ class MainActivity : AppCompatActivity() {
                 if (torrents.isEmpty()) {
                     showEmpty()
                 } else {
-                    adapter.updateData(torrents)
+                    currentTorrents = torrents
+                    applySort()
                     showContent()
                 }
             },
@@ -159,6 +190,20 @@ class MainActivity : AppCompatActivity() {
                 showError(error.message ?: "未知错误")
             }
         )
+    }
+
+    private fun applySort() {
+        if (currentTorrents.isEmpty()) return
+        
+        when (currentSort) {
+            0 -> adapter.updateData(currentTorrents)
+            1 -> adapter.sortByDate(descending = false)
+            2 -> adapter.sortByDate(descending = true)
+            3 -> adapter.sortBySize(descending = false)
+            4 -> adapter.sortBySize(descending = true)
+            5 -> adapter.sortBySeeders(descending = false)
+            6 -> adapter.sortBySeeders(descending = true)
+        }
     }
 
     private fun showLoading() {

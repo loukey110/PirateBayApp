@@ -75,6 +75,69 @@ class TorrentAdapter(
         notifyDataSetChanged()
     }
 
+    fun sortByDate(descending: Boolean = true) {
+        val sorted = torrents.sortedByDescending { 
+            parseDate(it.uploadDate) 
+        }
+        torrents.clear()
+        torrents.addAll(sorted)
+        notifyDataSetChanged()
+    }
+
+    fun sortBySize(descending: Boolean = true) {
+        val sorted = if (descending) {
+            torrents.sortedByDescending { parseSize(it.size) }
+        } else {
+            torrents.sortedBy { parseSize(it.size) }
+        }
+        torrents.clear()
+        torrents.addAll(sorted)
+        notifyDataSetChanged()
+    }
+
+    fun sortBySeeders(descending: Boolean = true) {
+        val sorted = if (descending) {
+            torrents.sortedByDescending { it.seeders.toIntOrNull() ?: 0 }
+        } else {
+            torrents.sortedBy { it.seeders.toIntOrNull() ?: 0 }
+        }
+        torrents.clear()
+        torrents.addAll(sorted)
+        notifyDataSetChanged()
+    }
+
+    private fun parseDate(dateStr: String): Long {
+        return try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            sdf.parse(dateStr)?.time ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun parseSize(sizeStr: String): Long {
+        return try {
+            val regex = Regex("(\\d+\\.?\\d*)\\s*(B|KB|MB|GB|TB)", RegexOption.IGNORE_CASE)
+            val match = regex.find(sizeStr)
+            if (match != null) {
+                val value = match.groupValues[1].toDouble()
+                val unit = match.groupValues[2].uppercase()
+                when (unit) {
+                    "B" -> value.toLong()
+                    "KB" -> (value * 1024).toLong()
+                    "MB" -> (value * 1024 * 1024).toLong()
+                    "GB" -> (value * 1024 * 1024 * 1024).toLong()
+                    "TB" -> (value * 1024 * 1024 * 1024 * 1024).toLong()
+                    else -> 0L
+                }
+            } else {
+                0L
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
     private fun copyToClipboard(text: String, label: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText(label, text)
