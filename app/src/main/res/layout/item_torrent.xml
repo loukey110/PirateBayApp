@@ -31,17 +31,19 @@
                 android:maxLines="3"
                 android:ellipsize="end" />
 
-            <ImageButton
+            <Button
                 android:id="@+id/translateButton"
-                android:layout_width="32dp"
+                android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:layout_marginStart="8dp"
                 android:background="@drawable/button_background"
-                android:src="@android:drawable/ic_menu_edit"
-                android:tint="#ffffff"
-                android:scaleType="centerInside"
-                android:contentDescription="翻译标题"
-                android:padding="6dp" />
+                android:text="翻译"
+                android:textColor="#ffffff"
+                android:textSize="12sp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp" />
 
         </LinearLayout>
 

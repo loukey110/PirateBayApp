@@ -8,7 +8,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
@@ -18,7 +17,6 @@ import com.piratebay.app.network.TranslationService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class TorrentAdapter(
     private val context: Context,
@@ -38,7 +36,7 @@ class TorrentAdapter(
         val uploaderTextView: TextView = view.findViewById(R.id.uploaderTextView)
         val copyMagnetButton: Button = view.findViewById(R.id.copyMagnetButton)
         val shareButton: Button = view.findViewById(R.id.shareButton)
-        val translateButton: ImageButton = view.findViewById(R.id.translateButton)
+        val translateButton: Button = view.findViewById(R.id.translateButton)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TorrentViewHolder {
@@ -52,10 +50,16 @@ class TorrentAdapter(
         
         originalTitles[position] = torrent.title
         
-        if (translatedTitles.containsKey(position)) {
+        val isTranslated = translatedTitles.containsKey(position)
+        
+        if (isTranslated) {
             holder.titleTextView.text = translatedTitles[position]
+            holder.translateButton.text = "原文"
+            holder.translateButton.setBackgroundResource(R.drawable.button_green_background)
         } else {
             holder.titleTextView.text = torrent.title
+            holder.translateButton.text = "翻译"
+            holder.translateButton.setBackgroundResource(R.drawable.button_background)
         }
         
         holder.sizeTextView.text = torrent.size
@@ -73,6 +77,8 @@ class TorrentAdapter(
             if (translatedTitles.containsKey(position)) {
                 holder.titleTextView.text = originalTitles[position]
                 translatedTitles.remove(position)
+                holder.translateButton.text = "翻译"
+                holder.translateButton.setBackgroundResource(R.drawable.button_background)
                 Toast.makeText(context, "已恢复原文", Toast.LENGTH_SHORT).show()
             } else {
                 translateTitle(position, holder)
@@ -100,22 +106,24 @@ class TorrentAdapter(
     private fun translateTitle(position: Int, holder: TorrentViewHolder) {
         val title = originalTitles[position] ?: return
         
+        holder.translateButton.isEnabled = false
+        holder.translateButton.text = "翻译中..."
+        
         CoroutineScope(Dispatchers.Main).launch {
-            holder.translateButton.isEnabled = false
-            holder.translateButton.alpha = 0.5f
-            
             val result = translationService.translate(title)
             
             holder.translateButton.isEnabled = true
-            holder.translateButton.alpha = 1f
             
             result.fold(
                 onSuccess = { translated ->
                     translatedTitles[position] = translated
                     holder.titleTextView.text = translated
+                    holder.translateButton.text = "原文"
+                    holder.translateButton.setBackgroundResource(R.drawable.button_green_background)
                     Toast.makeText(context, "翻译完成", Toast.LENGTH_SHORT).show()
                 },
                 onFailure = { error ->
+                    holder.translateButton.text = "翻译"
                     Toast.makeText(context, "翻译失败: ${error.message}", Toast.LENGTH_LONG).show()
                 }
             )
