@@ -17,29 +17,27 @@ class TranslationService(private val context: Context) {
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
     
-    private val appId: String by lazy { decryptAppId() }
-    private val secretKey: String by lazy { decryptSecretKey() }
+    private val appId: String = getAppId()
+    private val secretKey: String = getSecretKey()
     
     fun isConfigured(): Boolean = true
     
-    private fun decryptAppId(): String {
-        val parts = arrayOf("20260505", "002607", "354")
-        val xorKey = 0x1A
-        return parts.joinToString("").map { 
-            (it.code.xor(xorKey)).toChar() 
-        }.joinToString("")
+    private fun getAppId(): String {
+        val chars = charArrayOf(
+            '2','0','2','6','0','5','0','5',
+            '0','0','2','6','0','7',
+            '3','5','4'
+        )
+        return String(chars)
     }
     
-    private fun decryptSecretKey(): String {
-        val encoded = arrayOf(
-            "D", "z", "9", "0", "d", "m", "G", "M",
-            "6", "f", "o", "a", "T", "V", "O", "0",
-            "u", "d", "E", "U"
+    private fun getSecretKey(): String {
+        val chars = charArrayOf(
+            'D','z','9','0','d','m','G','M',
+            '6','f','o','a','T','V','O','0',
+            'u','d','E','U'
         )
-        val xorKey = 0x2B
-        return encoded.joinToString("").map { 
-            (it.code.xor(xorKey)).toChar() 
-        }.joinToString("")
+        return String(chars)
     }
     
     suspend fun translate(text: String, from: String = "en", to: String = "zh"): Result<String> {
