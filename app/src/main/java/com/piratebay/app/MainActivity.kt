@@ -1,5 +1,6 @@
 package com.piratebay.app
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
@@ -48,6 +49,18 @@ class MainActivity : AppCompatActivity() {
         "应用" to "300",
         "游戏" to "400",
         "其他" to "600"
+    )
+    
+    private val top100Categories = listOf(
+        "全部" to "0",
+        "视频 - 电影" to "207",
+        "视频 - 电视剧" to "208",
+        "视频 - 其他视频" to "299",
+        "音频 - 音乐" to "101",
+        "音频 - 有声书" to "102",
+        "应用 - 软件" to "301",
+        "游戏" to "400",
+        "电子书" to "601"
     )
     
     private val sortOptions = listOf(
@@ -131,7 +144,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         topButton.setOnClickListener {
-            loadTop100()
+            showTop100CategoryDialog()
         }
         
         searchEditText.setOnEditorActionListener { _, _, _ ->
@@ -167,14 +180,28 @@ class MainActivity : AppCompatActivity() {
         search(query, currentCategory)
     }
 
-    private fun loadTop100() {
+    private fun showTop100CategoryDialog() {
+        val categoryNames = top100Categories.map { it.first }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle("选择分类")
+            .setItems(categoryNames) { dialog, which ->
+                val selectedCategory = top100Categories[which].second
+                loadTop100(selectedCategory)
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun loadTop100(category: String) {
         currentQuery = ""
         currentTorrents = emptyList()
         adapter.clear()
         
         showLoading()
         lifecycleScope.launch {
-            val result = scraper.getTopTorrents(currentCategory)
+            val result = scraper.getTopTorrents(category)
             handleResult(result)
         }
     }

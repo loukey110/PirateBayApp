@@ -1,4 +1,4 @@
-package com.piratebay.app.network
+﻿package com.piratebay.app.network
 
 import com.piratebay.app.model.TorrentItem
 import kotlinx.coroutines.Dispatchers
@@ -253,8 +253,18 @@ class TPBScraper {
                 var rawTorrents = parseJsonResponseWithCategory(json)
                 
                 if (category != "0") {
-                    val categoryPrefix = if (category.length >= 1) category.substring(0, 1) else "0"
-                    rawTorrents = rawTorrents.filter { it.categoryCode.startsWith(categoryPrefix) }
+                    rawTorrents = when (category) {
+                        "207", "208", "299", "101", "102", "301", "601" -> {
+                            rawTorrents.filter { it.categoryCode == category }
+                        }
+                        "400" -> {
+                            rawTorrents.filter { it.categoryCode.startsWith("4") }
+                        }
+                        else -> {
+                            val categoryPrefix = if (category.length >= 1) category.substring(0, 1) else "0"
+                            rawTorrents.filter { it.categoryCode.startsWith(categoryPrefix) }
+                        }
+                    }
                 }
                 
                 val torrents = rawTorrents.map { it.item }.take(100)
