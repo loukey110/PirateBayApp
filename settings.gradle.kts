@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "PirateBayApp"
 include(":app")
+include(":shared")
