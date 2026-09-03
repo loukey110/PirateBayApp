@@ -1,4 +1,4 @@
-﻿package com.piratebay.app.network
+package com.piratebay.app.network
 
 import com.piratebay.app.model.TorrentItem
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +20,10 @@ class TPBScraper {
         .followRedirects(true)
         .build()
     
-    private val apiUrl = "https://apibay.org"
+    private val apiUrls = listOf(
+        "https://apibay.org",
+        "https://piratebay.party"
+    )
     
     private val trackers = listOf(
         "udp://tracker.opentrackr.org:1337/announce",
@@ -80,27 +83,30 @@ class TPBScraper {
     
     suspend fun search(query: String, category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
-            try {
-                val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                val url = "$apiUrl/q.php?q=$encodedQuery&cat=$category"
-                
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "Mozilla/5.0")
-                    .build()
-                
-                val response = client.newCall(request).execute()
-                
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            var lastException: Exception? = null
+
+            for (baseUrl in apiUrls) {
+                try {
+                    val url = "$baseUrl/q.php?q=$encodedQuery&cat=$category"
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "Mozilla/5.0")
+                        .build()
+                    
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val json = response.body?.string() ?: continue
+                        val torrents = parseJsonResponse(json)
+                        return@withContext Result.success(torrents)
+                    } else {
+                        lastException = Exception("HTTP ${response.code} from $baseUrl")
+                    }
+                } catch (e: Exception) {
+                    lastException = e
                 }
-                
-                val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                val torrents = parseJsonResponse(json)
-                Result.success(torrents)
-            } catch (e: Exception) {
-                Result.failure(e)
             }
+            Result.failure(lastException ?: Exception("Network request failed"))
         }
     }
     
@@ -112,32 +118,33 @@ class TPBScraper {
             
             for (i in 0 until jsonArray.length()) {
                 val item = jsonArray.getJSONObject(i)
+                val id = item.optString("id", "0")
+                if (id == "0") continue
                 
-                if (item.getString("id") == "0") continue
-                
-                val name = item.getString("name")
-                val infoHash = item.getString("info_hash")
-                val seeders = item.getString("seeders")
-                val leechers = item.getString("leechers")
-                val sizeBytes = item.getString("size").toLongOrNull() ?: 0
-                val username = item.getString("username")
-                val added = item.getString("added").toLongOrNull() ?: 0
-                val category = item.getString("category")
+                val name = item.optString("name", "Unknown")
+                val infoHash = item.optString("info_hash", "")
+                if (infoHash.isEmpty()) continue
+
+                val seeders = item.optString("seeders", "0").toIntOrNull() ?: 0
+                val leechers = item.optString("leechers", "0").toIntOrNull() ?: 0
+                val sizeBytes = item.optString("size", "0").toLongOrNull() ?: 0L
+                val username = item.optString("username", "Anonymous")
+                val added = item.optString("added", "0").toLongOrNull() ?: 0L
+                val category = item.optString("category", "0")
                 
                 val magnetLink = buildMagnetLink(infoHash, name)
-                
-                val size = formatSize(sizeBytes)
-                val uploadDate = formatDate(added)
                 val categoryName = categoryMap[category] ?: "Other"
                 
                 torrents.add(
                     TorrentItem(
+                        id = id,
+                        infoHash = infoHash,
                         title = name,
                         magnetLink = magnetLink,
-                        size = size,
-                        seeders = seeders,
-                        leechers = leechers,
-                        uploadDate = uploadDate,
+                        sizeBytes = sizeBytes,
+                        seedersCount = seeders,
+                        leechersCount = leechers,
+                        uploadTimestamp = added,
                         uploader = username,
                         category = categoryName
                     )
@@ -162,51 +169,38 @@ class TPBScraper {
         return sb.toString()
     }
     
-    private fun formatSize(bytes: Long): String {
-        return when {
-            bytes < 1024 -> "$bytes B"
-            bytes < 1024 * 1024 -> String.format("%.1f KB", bytes / 1024.0)
-            bytes < 1024 * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
-            bytes < 1024L * 1024 * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
-            else -> String.format("%.1f TB", bytes / (1024.0 * 1024 * 1024 * 1024))
-        }
-    }
-    
-    private fun formatDate(timestamp: Long): String {
-        return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-            sdf.format(Date(timestamp * 1000))
-        } catch (e: Exception) {
-            "Unknown"
-        }
-    }
-    
     suspend fun getTopTorrents(category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
-            try {
-                val topUrl = if (category == "0") {
-                    "$apiUrl/precompiled/data_top100_all.json"
-                } else {
-                    "$apiUrl/precompiled/data_top100_$category.json"
+            var lastException: Exception? = null
+
+            for (baseUrl in apiUrls) {
+                try {
+                    val path = if (category == "0") {
+                        "precompiled/data_top100_all.json"
+                    } else {
+                        "precompiled/data_top100_$category.json"
+                    }
+                    val topUrl = "$baseUrl/$path"
+                    
+                    val request = Request.Builder()
+                        .url(topUrl)
+                        .header("User-Agent", "Mozilla/5.0")
+                        .build()
+                    
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val json = response.body?.string() ?: continue
+                        val torrents = parseJsonResponse(json)
+                        return@withContext Result.success(torrents)
+                    } else {
+                        lastException = Exception("HTTP ${response.code} from $baseUrl")
+                    }
+                } catch (e: Exception) {
+                    lastException = e
                 }
-                
-                val request = Request.Builder()
-                    .url(topUrl)
-                    .header("User-Agent", "Mozilla/5.0")
-                    .build()
-                
-                val response = client.newCall(request).execute()
-                
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
-                }
-                
-                val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                val torrents = parseJsonResponse(json)
-                Result.success(torrents)
-            } catch (e: Exception) {
-                Result.failure(e)
             }
+            Result.failure(lastException ?: Exception("Network request failed"))
         }
     }
 }
+

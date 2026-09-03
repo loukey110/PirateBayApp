@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(localPropertiesFile.inputStream())
+    }
+}
+val baiduAppId: String = localProperties.getProperty("BAIDU_APP_ID") ?: ""
+val baiduSecretKey: String = localProperties.getProperty("BAIDU_SECRET_KEY") ?: ""
 
 android {
     namespace = "com.piratebay.app"
@@ -15,6 +26,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "BAIDU_APP_ID", "\"$baiduAppId\"")
+        buildConfigField("String", "BAIDU_SECRET_KEY", "\"$baiduSecretKey\"")
     }
 
     buildTypes {
@@ -35,6 +49,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 }
 
@@ -49,9 +64,12 @@ dependencies {
     implementation("org.jsoup:jsoup:1.17.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
+

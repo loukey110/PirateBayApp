@@ -1,47 +1,35 @@
 package com.piratebay.app
 
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.EditText
-import android.widget.ImageButton
-import android.widget.ProgressBar
-import android.widget.Spinner
-import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.piratebay.app.adapter.TorrentAdapter
+import com.piratebay.app.databinding.ActivityMainBinding
 import com.piratebay.app.model.TorrentItem
-import com.piratebay.app.network.TPBScraper
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var scraper: TPBScraper
+    private lateinit var binding: ActivityMainBinding
+    private val viewModel: MainViewModel by viewModels()
     private lateinit var adapter: TorrentAdapter
-    
-    private lateinit var searchEditText: EditText
-    private lateinit var searchButton: ImageButton
-    private lateinit var topButton: Button
-    private lateinit var categorySpinner: Spinner
-    private lateinit var sortSpinner: Spinner
-    private lateinit var torrentsRecyclerView: RecyclerView
-    private lateinit var swipeRefreshLayout: SwipeRefreshLayout
-    private lateinit var progressBar: ProgressBar
-    private lateinit var emptyView: TextView
-    private lateinit var errorView: TextView
-    
-    private var currentQuery = ""
-    private var currentCategory = "0"
-    private var currentSort = 0
-    private var currentTorrents: List<TorrentItem> = emptyList()
-    
+
     private val categories = mapOf(
         "全部" to "0",
         "视频" to "200",
@@ -50,7 +38,7 @@ class MainActivity : AppCompatActivity() {
         "游戏" to "400",
         "其他" to "600"
     )
-    
+
     private val top100Categories = listOf(
         "全部 Top 100" to "0",
         "—— 音频 ——" to "HEADER",
@@ -101,133 +89,258 @@ class MainActivity : AppCompatActivity() {
         "Physibles" to "605",
         "其他" to "699"
     )
-    
-    private val sortOptions = listOf(
-        "默认排序",
-        "时间 ↑",
-        "时间 ↓",
-        "大小 ↑",
-        "大小 ↓",
-        "种子数 ↑",
-        "种子数 ↓"
-    )
+
+    private val chipButtons = mutableListOf<androidx.appcompat.widget.AppCompatButton>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        
-        scraper = TPBScraper()
-        
-        initViews()
-        setupCategorySpinner()
-        setupSortSpinner()
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        setupCategoryChips()
+        setupSortButton()
         setupRecyclerView()
         setupListeners()
-        
-        showInitial()
+        observeViewModel()
     }
 
-    private fun initViews() {
-        searchEditText = findViewById(R.id.searchEditText)
-        searchButton = findViewById(R.id.searchButton)
-        topButton = findViewById(R.id.topButton)
-        categorySpinner = findViewById(R.id.categorySpinner)
-        sortSpinner = findViewById(R.id.sortSpinner)
-        torrentsRecyclerView = findViewById(R.id.torrentsRecyclerView)
-        swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
-        progressBar = findViewById(R.id.progressBar)
-        emptyView = findViewById(R.id.emptyView)
-        errorView = findViewById(R.id.errorView)
-    }
+    private fun setupCategoryChips() {
+        binding.categoryChipsContainer.removeAllViews()
+        chipButtons.clear()
 
-    private fun setupCategorySpinner() {
-        val categoryNames = categories.keys.toList()
-        val spinnerAdapter = ArrayAdapter(this, R.layout.spinner_item, categoryNames)
-        spinnerAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        categorySpinner.adapter = spinnerAdapter
-        
-        categorySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-                val selectedCategory = categoryNames[position]
-                currentCategory = categories[selectedCategory] ?: "0"
+        val categoryList = listOf(
+            "🔥 全部" to "0",
+            "🎬 电影视频" to "200",
+            "🎵 音乐音频" to "100",
+            "📱 应用程序" to "300",
+            "🎮 游戏娱乐" to "400",
+            "📦 其他资源" to "600"
+        )
+
+        for ((index, pair) in categoryList.withIndex()) {
+            val (name, id) = pair
+            val chip = androidx.appcompat.widget.AppCompatButton(this).apply {
+                text = name
+                textSize = 12f
+                isAllCaps = false
+                includeFontPadding = false
+                minHeight = 0
+                minWidth = 0
+                setPadding(dpToPx(14), 0, dpToPx(14), 0)
+
+                val layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    dpToPx(32)
+                ).apply {
+                    marginEnd = dpToPx(8)
+                }
+                this.layoutParams = layoutParams
+
+                setOnClickListener {
+                    selectCategoryChip(index, id)
+                }
             }
-            
-            override fun onNothingSelected(parent: AdapterView<*>) {}
+
+            chipButtons.add(chip)
+            binding.categoryChipsContainer.addView(chip)
+        }
+
+        updateChipStyles(0)
+    }
+
+    private fun selectCategoryChip(selectedIndex: Int, categoryId: String) {
+        updateChipStyles(selectedIndex)
+        viewModel.setCategory(categoryId)
+        val currentQuery = binding.searchEditText.text.toString().trim()
+        if (currentQuery.isNotEmpty()) {
+            viewModel.search(currentQuery, categoryId)
         }
     }
 
-    private fun setupSortSpinner() {
-        val spinnerAdapter = ArrayAdapter(this, R.layout.spinner_item, sortOptions)
-        spinnerAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        sortSpinner.adapter = spinnerAdapter
-        
-        sortSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-                currentSort = position
-                applySort()
+    private fun updateChipStyles(selectedIndex: Int) {
+        for ((i, chip) in chipButtons.withIndex()) {
+            if (i == selectedIndex) {
+                chip.setBackgroundResource(R.drawable.chip_background_selected)
+                chip.setTextColor(android.graphics.Color.WHITE)
+                chip.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            } else {
+                chip.setBackgroundResource(R.drawable.chip_background_unselected)
+                chip.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.text_secondary))
+                chip.typeface = android.graphics.Typeface.DEFAULT
             }
-            
-            override fun onNothingSelected(parent: AdapterView<*>) {}
         }
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+
+    private val sortOptions = listOf(
+        "默认排序",
+        "时间 ↑ (由旧到新)",
+        "时间 ↓ (最新发布)",
+        "大小 ↑ (由小到大)",
+        "大小 ↓ (体积最大)",
+        "做种 ↑ (较少做种)",
+        "做种 ↓ (最多做种)"
+    )
+
+    private val sortButtonLabels = listOf(
+        "⚡ 默认排序",
+        "📅 时间 ↑",
+        "📅 最新发布",
+        "💾 大小 ↑",
+        "💾 文件最大",
+        "🔥 做种 ↑",
+        "🔥 最多做种"
+    )
+
+    private fun setupSortButton() {
+        binding.sortButton.setOnClickListener {
+            showSortDialog()
+        }
+    }
+
+    private fun showSortDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("选择排序方式")
+            .setSingleChoiceItems(sortOptions.toTypedArray(), viewModel.currentSort) { dialog, which ->
+                viewModel.setSort(which)
+                binding.sortButton.text = "${sortButtonLabels[which]} ▾"
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun setupRecyclerView() {
-        adapter = TorrentAdapter(this, mutableListOf())
-        torrentsRecyclerView.layoutManager = LinearLayoutManager(this)
-        torrentsRecyclerView.adapter = adapter
+        adapter = TorrentAdapter(
+            onTranslateClick = { torrent ->
+                viewModel.toggleTranslate(torrent)
+            },
+            onItemClick = { torrent ->
+                openMagnetLink(torrent.magnetLink)
+            },
+            onCopyClick = { torrent ->
+                copyToClipboard(torrent.magnetLink, "磁力链接")
+                Toast.makeText(this, "磁力链接已复制", Toast.LENGTH_SHORT).show()
+            },
+            onShareClick = { torrent ->
+                shareMagnetLink(torrent.magnetLink, torrent.title)
+            }
+        )
+        binding.torrentsRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.torrentsRecyclerView.adapter = adapter
     }
 
     private fun setupListeners() {
-        searchButton.setOnClickListener {
+        binding.searchButton.setOnClickListener {
             performSearch()
         }
-        
-        topButton.setOnClickListener {
+
+        binding.topButton.setOnClickListener {
             showTop100CategoryDialog()
         }
-        
-        searchEditText.setOnEditorActionListener { _, _, _ ->
+
+        binding.searchEditText.setOnEditorActionListener { _, _, _ ->
             performSearch()
             true
         }
-        
-        swipeRefreshLayout.setOnRefreshListener {
-            if (currentQuery.isNotEmpty()) {
-                performSearch()
-            } else {
-                swipeRefreshLayout.isRefreshing = false
-            }
+
+        binding.swipeRefreshLayout.setOnRefreshListener {
+            viewModel.refresh()
         }
-        
-        swipeRefreshLayout.setColorSchemeResources(
-            android.R.color.holo_orange_light,
-            android.R.color.holo_orange_dark
+
+        binding.swipeRefreshLayout.setColorSchemeResources(
+            R.color.orange_primary,
+            R.color.cyan_accent
         )
     }
 
+    private fun observeViewModel() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.uiState.collect { state ->
+                        renderUiState(state)
+                    }
+                }
+                launch {
+                    viewModel.eventFlow.collect { event ->
+                        when (event) {
+                            is SingleEvent.ShowToast -> Toast.makeText(this@MainActivity, event.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun renderUiState(state: UiState) {
+        binding.swipeRefreshLayout.isRefreshing = false
+
+        when (state) {
+            is UiState.Idle -> {
+                binding.progressBar.visibility = View.GONE
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = "输入关键词搜索或点击 Top 100"
+                binding.errorView.visibility = View.GONE
+                binding.torrentsRecyclerView.visibility = View.GONE
+                binding.statusSummaryTextView.text = "准备就绪 · 输入关键词搜索"
+            }
+            is UiState.Loading -> {
+                binding.progressBar.visibility = View.VISIBLE
+                binding.emptyView.visibility = View.GONE
+                binding.errorView.visibility = View.GONE
+                binding.torrentsRecyclerView.visibility = View.GONE
+                binding.statusSummaryTextView.text = "正在全网检索种子资源..."
+            }
+            is UiState.Success -> {
+                binding.progressBar.visibility = View.GONE
+                binding.emptyView.visibility = View.GONE
+                binding.errorView.visibility = View.GONE
+                binding.torrentsRecyclerView.visibility = View.VISIBLE
+                binding.statusSummaryTextView.text = "找到 ${state.torrents.size} 条资源结果"
+                adapter.submitList(state.torrents)
+            }
+            is UiState.Empty -> {
+                binding.progressBar.visibility = View.GONE
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = "没有找到结果\n请尝试更换关键词或分类"
+                binding.errorView.visibility = View.GONE
+                binding.torrentsRecyclerView.visibility = View.GONE
+                binding.statusSummaryTextView.text = "共找到 0 条资源结果"
+            }
+            is UiState.Error -> {
+                binding.progressBar.visibility = View.GONE
+                binding.emptyView.visibility = View.GONE
+                binding.errorView.text = state.message
+                binding.errorView.visibility = View.VISIBLE
+                binding.torrentsRecyclerView.visibility = View.GONE
+                binding.statusSummaryTextView.text = "加载失败"
+            }
+        }
+    }
+
     private fun performSearch() {
-        val query = searchEditText.text.toString().trim()
+        hideKeyboard()
+        val query = binding.searchEditText.text.toString().trim()
         if (query.isEmpty()) {
-            searchEditText.error = "请输入搜索关键词"
+            binding.searchEditText.error = "请输入搜索关键词"
             return
         }
-        
-        currentQuery = query
-        currentTorrents = emptyList()
-        adapter.clear()
-        
-        search(query, currentCategory)
+        viewModel.search(query)
     }
 
     private fun showTop100CategoryDialog() {
         val displayItems = top100Categories.map { it.first }.toTypedArray()
-        
+
         AlertDialog.Builder(this)
             .setTitle("选择 Top 100 分类")
             .setItems(displayItems) { dialog, which ->
                 val selectedCategory = top100Categories[which].second
                 if (selectedCategory != "HEADER") {
-                    loadTop100(selectedCategory)
+                    viewModel.loadTop100(selectedCategory)
                 }
                 dialog.dismiss()
             }
@@ -235,87 +348,41 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun loadTop100(category: String) {
-        currentQuery = ""
-        currentTorrents = emptyList()
-        adapter.clear()
-        
-        showLoading()
-        lifecycleScope.launch {
-            val result = scraper.getTopTorrents(category)
-            handleResult(result)
-        }
-    }
-
-    private fun search(query: String, category: String) {
-        showLoading()
-        lifecycleScope.launch {
-            val result = scraper.search(query, category)
-            handleResult(result)
-        }
-    }
-
-    private fun handleResult(result: Result<List<TorrentItem>>) {
-        hideLoading()
-        
-        result.fold(
-            onSuccess = { torrents ->
-                if (torrents.isEmpty()) {
-                    showEmpty()
-                } else {
-                    currentTorrents = torrents
-                    applySort()
-                    showContent()
-                }
-            },
-            onFailure = { error ->
-                showError(error.message ?: "未知错误")
+    private fun openMagnetLink(magnetLink: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(magnetLink)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-        )
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            copyToClipboard(magnetLink, "磁力链接")
+            Toast.makeText(this, "未检测到支持磁力的客户端，已复制链接到剪贴板", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            copyToClipboard(magnetLink, "磁力链接")
+            Toast.makeText(this, "无法启动外部应用，已复制链接到剪贴板", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun applySort() {
-        if (currentTorrents.isEmpty()) return
-        adapter.updateAndSort(currentTorrents, currentSort)
+    private fun copyToClipboard(text: String, label: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText(label, text)
+        clipboard.setPrimaryClip(clip)
     }
 
-    private fun showInitial() {
-        progressBar.visibility = View.GONE
-        emptyView.visibility = View.VISIBLE
-        emptyView.text = "输入关键词搜索或点击 Top 100"
-        errorView.visibility = View.GONE
-        torrentsRecyclerView.visibility = View.GONE
+    private fun shareMagnetLink(magnetLink: String, title: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, magnetLink)
+        }
+        val chooserIntent = Intent.createChooser(intent, "分享磁力链接")
+        startActivity(chooserIntent)
     }
 
-    private fun showLoading() {
-        progressBar.visibility = View.VISIBLE
-        emptyView.visibility = View.GONE
-        errorView.visibility = View.GONE
-        torrentsRecyclerView.visibility = View.GONE
-    }
-
-    private fun hideLoading() {
-        progressBar.visibility = View.GONE
-        swipeRefreshLayout.isRefreshing = false
-    }
-
-    private fun showEmpty() {
-        emptyView.visibility = View.VISIBLE
-        emptyView.text = "没有找到结果"
-        errorView.visibility = View.GONE
-        torrentsRecyclerView.visibility = View.GONE
-    }
-
-    private fun showContent() {
-        torrentsRecyclerView.visibility = View.VISIBLE
-        emptyView.visibility = View.GONE
-        errorView.visibility = View.GONE
-    }
-
-    private fun showError(message: String) {
-        errorView.text = message
-        errorView.visibility = View.VISIBLE
-        emptyView.visibility = View.GONE
-        torrentsRecyclerView.visibility = View.GONE
+    private fun hideKeyboard() {
+        val currentFocusView = currentFocus ?: binding.root
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(currentFocusView.windowToken, 0)
     }
 }
+

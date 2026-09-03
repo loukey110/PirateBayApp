@@ -1,0 +1,4 @@
+# Location of the SDK. This is only used by Gradle.
+# Baidu Translation API Credentials (Optional):
+BAIDU_APP_ID=
+BAIDU_SECRET_KEY=

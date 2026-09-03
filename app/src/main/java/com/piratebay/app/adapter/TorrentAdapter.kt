@@ -1,232 +1,92 @@
 package com.piratebay.app.adapter
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.piratebay.app.R
+import com.piratebay.app.databinding.ItemTorrentBinding
 import com.piratebay.app.model.TorrentItem
-import com.piratebay.app.network.TranslationService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class TorrentAdapter(
-    private val context: Context,
-    private val torrents: MutableList<TorrentItem>
-) : RecyclerView.Adapter<TorrentAdapter.TorrentViewHolder>() {
+    private val onTranslateClick: (TorrentItem) -> Unit,
+    private val onItemClick: (TorrentItem) -> Unit,
+    private val onCopyClick: (TorrentItem) -> Unit,
+    private val onShareClick: (TorrentItem) -> Unit
+) : ListAdapter<TorrentItem, TorrentAdapter.TorrentViewHolder>(TorrentDiffCallback()) {
 
-    private val translationService = TranslationService(context)
-    private val originalTitles = mutableMapOf<Int, String>()
-    private val translatedTitles = mutableMapOf<Int, String>()
-
-    class TorrentViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val titleTextView: TextView = view.findViewById(R.id.titleTextView)
-        val sizeTextView: TextView = view.findViewById(R.id.sizeTextView)
-        val seedersTextView: TextView = view.findViewById(R.id.seedersTextView)
-        val leechersTextView: TextView = view.findViewById(R.id.leechersTextView)
-        val dateTextView: TextView = view.findViewById(R.id.dateTextView)
-        val uploaderTextView: TextView = view.findViewById(R.id.uploaderTextView)
-        val copyMagnetButton: Button = view.findViewById(R.id.copyMagnetButton)
-        val shareButton: Button = view.findViewById(R.id.shareButton)
-        val translateButton: Button = view.findViewById(R.id.translateButton)
-    }
+    class TorrentViewHolder(val binding: ItemTorrentBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TorrentViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_torrent, parent, false)
-        return TorrentViewHolder(view)
+        val binding = ItemTorrentBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return TorrentViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: TorrentViewHolder, position: Int) {
-        val torrent = torrents[position]
-        
-        originalTitles[position] = torrent.title
-        
-        val isTranslated = translatedTitles.containsKey(position)
-        
-        if (isTranslated) {
-            holder.titleTextView.text = translatedTitles[position]
-            holder.translateButton.text = "原文"
-            holder.translateButton.setBackgroundResource(R.drawable.button_green_background)
-        } else {
-            holder.titleTextView.text = torrent.title
-            holder.translateButton.text = "翻译"
-            holder.translateButton.setBackgroundResource(R.drawable.button_background)
-        }
-        
-        holder.sizeTextView.text = torrent.size
-        holder.seedersTextView.text = "种子: ${torrent.seeders}"
-        holder.leechersTextView.text = "下载: ${torrent.leechers}"
-        holder.dateTextView.text = torrent.uploadDate
-        holder.uploaderTextView.text = "上传者: ${torrent.uploader}"
-        
-        holder.translateButton.setOnClickListener {
-            if (translatedTitles.containsKey(position)) {
-                holder.titleTextView.text = originalTitles[position]
-                translatedTitles.remove(position)
-                holder.translateButton.text = "翻译"
-                holder.translateButton.setBackgroundResource(R.drawable.button_background)
-                Toast.makeText(context, "已恢复原文", Toast.LENGTH_SHORT).show()
-            } else {
-                translateTitle(position, holder)
+        val torrent = getItem(position)
+        val binding = holder.binding
+
+        binding.titleTextView.text = torrent.displayTitle
+
+        when {
+            torrent.isTranslating -> {
+                binding.translateButton.isEnabled = false
+                binding.translateButton.text = "..."
+                binding.translateButton.setBackgroundResource(R.drawable.button_secondary_background)
+            }
+            torrent.isTranslated -> {
+                binding.translateButton.isEnabled = true
+                binding.translateButton.text = "原文"
+                binding.translateButton.setBackgroundResource(R.drawable.button_green_background)
+            }
+            else -> {
+                binding.translateButton.isEnabled = true
+                binding.translateButton.text = "翻译"
+                binding.translateButton.setBackgroundResource(R.drawable.button_secondary_background)
             }
         }
-        
-        holder.copyMagnetButton.setOnClickListener {
-            copyToClipboard(torrent.magnetLink, "磁力链接")
-            Toast.makeText(context, "磁力链接已复制", Toast.LENGTH_SHORT).show()
+
+        binding.sizeTextView.text = torrent.formattedSize
+        binding.seedersTextView.text = "● ${torrent.seedersCount} 做种"
+        binding.leechersTextView.text = "● ${torrent.leechersCount} 下载"
+        binding.dateTextView.text = torrent.formattedDate
+        binding.uploaderTextView.text = "上传者: ${torrent.uploader}"
+
+        binding.translateButton.setOnClickListener {
+            onTranslateClick(torrent)
         }
-        
-        holder.shareButton.setOnClickListener {
-            shareMagnetLink(torrent.magnetLink, torrent.title)
+
+        binding.copyMagnetButton.setOnClickListener {
+            onCopyClick(torrent)
         }
-        
-        holder.itemView.setOnLongClickListener {
-            copyToClipboard(torrent.magnetLink, "磁力链接")
-            Toast.makeText(context, "磁力链接已复制", Toast.LENGTH_SHORT).show()
+
+        binding.shareButton.setOnClickListener {
+            onShareClick(torrent)
+        }
+
+        binding.root.setOnClickListener {
+            onItemClick(torrent)
+        }
+
+        binding.root.setOnLongClickListener {
+            onCopyClick(torrent)
             true
         }
     }
 
-    override fun getItemCount() = torrents.size
-
-    private fun translateTitle(position: Int, holder: TorrentViewHolder) {
-        val title = originalTitles[position] ?: return
-        
-        holder.translateButton.isEnabled = false
-        holder.translateButton.text = "翻译中..."
-        
-        CoroutineScope(Dispatchers.Main).launch {
-            val result = translationService.translate(title)
-            
-            holder.translateButton.isEnabled = true
-            
-            result.fold(
-                onSuccess = { translated ->
-                    translatedTitles[position] = translated
-                    holder.titleTextView.text = translated
-                    holder.translateButton.text = "原文"
-                    holder.translateButton.setBackgroundResource(R.drawable.button_green_background)
-                    Toast.makeText(context, "翻译完成", Toast.LENGTH_SHORT).show()
-                },
-                onFailure = { error ->
-                    holder.translateButton.text = "翻译"
-                    Toast.makeText(context, "翻译失败: ${error.message}", Toast.LENGTH_LONG).show()
-                }
-            )
+    class TorrentDiffCallback : DiffUtil.ItemCallback<TorrentItem>() {
+        override fun areItemsTheSame(oldItem: TorrentItem, newItem: TorrentItem): Boolean {
+            return oldItem.infoHash.equals(newItem.infoHash, ignoreCase = true) || oldItem.id == newItem.id
         }
-    }
 
-    fun updateAndSort(newTorrents: List<TorrentItem>, sortType: Int) {
-        torrents.clear()
-        torrents.addAll(newTorrents)
-        originalTitles.clear()
-        translatedTitles.clear()
-        
-        when (sortType) {
-            1 -> {
-                val sorted = torrents.sortedBy { parseDate(it.uploadDate) }
-                torrents.clear()
-                torrents.addAll(sorted)
-            }
-            2 -> {
-                val sorted = torrents.sortedByDescending { parseDate(it.uploadDate) }
-                torrents.clear()
-                torrents.addAll(sorted)
-            }
-            3 -> {
-                val sorted = torrents.sortedBy { parseSize(it.size) }
-                torrents.clear()
-                torrents.addAll(sorted)
-            }
-            4 -> {
-                val sorted = torrents.sortedByDescending { parseSize(it.size) }
-                torrents.clear()
-                torrents.addAll(sorted)
-            }
-            5 -> {
-                val sorted = torrents.sortedBy { it.seeders.toIntOrNull() ?: 0 }
-                torrents.clear()
-                torrents.addAll(sorted)
-            }
-            6 -> {
-                val sorted = torrents.sortedByDescending { it.seeders.toIntOrNull() ?: 0 }
-                torrents.clear()
-                torrents.addAll(sorted)
-            }
+        override fun areContentsTheSame(oldItem: TorrentItem, newItem: TorrentItem): Boolean {
+            return oldItem == newItem
         }
-        
-        notifyDataSetChanged()
-    }
-
-    fun updateData(newTorrents: List<TorrentItem>) {
-        torrents.clear()
-        torrents.addAll(newTorrents)
-        originalTitles.clear()
-        translatedTitles.clear()
-        notifyDataSetChanged()
-    }
-
-    fun clear() {
-        torrents.clear()
-        originalTitles.clear()
-        translatedTitles.clear()
-        notifyDataSetChanged()
-    }
-
-    private fun parseDate(dateStr: String): Long {
-        return try {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-            sdf.parse(dateStr)?.time ?: 0L
-        } catch (e: Exception) {
-            0L
-        }
-    }
-
-    private fun parseSize(sizeStr: String): Long {
-        return try {
-            val regex = Regex("(\\d+\\.?\\d*)\\s*(B|KB|MB|GB|TB)", RegexOption.IGNORE_CASE)
-            val match = regex.find(sizeStr)
-            if (match != null) {
-                val value = match.groupValues[1].toDouble()
-                val unit = match.groupValues[2].uppercase()
-                when (unit) {
-                    "B" -> value.toLong()
-                    "KB" -> (value * 1024).toLong()
-                    "MB" -> (value * 1024 * 1024).toLong()
-                    "GB" -> (value * 1024 * 1024 * 1024).toLong()
-                    "TB" -> (value * 1024 * 1024 * 1024 * 1024).toLong()
-                    else -> 0L
-                }
-            } else {
-                0L
-            }
-        } catch (e: Exception) {
-            0L
-        }
-    }
-
-    private fun copyToClipboard(text: String, label: String) {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText(label, text)
-        clipboard.setPrimaryClip(clip)
-    }
-
-    private fun shareMagnetLink(magnetLink: String, title: String) {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, title)
-            putExtra(Intent.EXTRA_TEXT, magnetLink)
-        }
-        val chooserIntent = Intent.createChooser(intent, "分享磁力链接")
-        context.startActivity(chooserIntent)
     }
 }
+

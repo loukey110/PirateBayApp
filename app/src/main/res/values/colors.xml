@@ -2,12 +2,25 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="gray_700">#FF616161</color>
-    <color name="gray_800">#FF424242</color>
-    <color name="orange_primary">#FFFF6B00</color>
+    
+    <!-- 深海极光色系 -->
+    <color name="bg_dark">#0F141C</color>
+    <color name="bg_header">#141B26</color>
+    <color name="bg_card">#161D2B</color>
+    <color name="bg_input">#1C2536</color>
+    <color name="border_subtle">#263345</color>
+    
+    <color name="orange_primary">#FF7D00</color>
+    <color name="orange_secondary">#FF9500</color>
+    <color name="cyan_accent">#38BDF8</color>
+    <color name="green_seeders">#10B981</color>
+    <color name="red_leechers">#F43F5E</color>
+    
+    <color name="btn_secondary_bg">#222B3D</color>
+    
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+    
+    <color name="icon_background">#0B0F17</color>
 </resources>

@@ -1,6 +1,7 @@
 package com.piratebay.app.network
 
 import android.content.Context
+import com.piratebay.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -10,37 +11,23 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-class TranslationService(private val context: Context) {
+class TranslationService(private val context: Context? = null) {
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
     
-    private val appId: String = getAppId()
-    private val secretKey: String = getSecretKey()
+    private val appId: String = BuildConfig.BAIDU_APP_ID
+    private val secretKey: String = BuildConfig.BAIDU_SECRET_KEY
     
-    fun isConfigured(): Boolean = true
-    
-    private fun getAppId(): String {
-        val chars = charArrayOf(
-            '2','0','2','6','0','5','0','5',
-            '0','0','2','6','0','7',
-            '3','5','4'
-        )
-        return String(chars)
-    }
-    
-    private fun getSecretKey(): String {
-        val chars = charArrayOf(
-            'D','z','9','0','d','m','G','M',
-            '6','f','o','a','T','V','O','0',
-            'u','d','E','U'
-        )
-        return String(chars)
-    }
+    fun isConfigured(): Boolean = appId.isNotBlank() && secretKey.isNotBlank()
+
     
     suspend fun translate(text: String, from: String = "en", to: String = "zh"): Result<String> {
+        if (!isConfigured()) {
+            return Result.failure(IllegalStateException("未配置百度翻译密钥，请在 local.properties 中配置 BAIDU_APP_ID 和 BAIDU_SECRET_KEY"))
+        }
         return withContext(Dispatchers.IO) {
             try {
                 val salt = System.currentTimeMillis().toString()
