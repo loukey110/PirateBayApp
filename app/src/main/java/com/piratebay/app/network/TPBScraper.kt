@@ -14,13 +14,19 @@ import java.util.concurrent.TimeUnit
 class TPBScraper {
     
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
     
     private val apiUrl = "https://apibay.org"
+
+    private val webMirrors = listOf(
+        "https://thepiratebay7.com",
+        "https://thepiratebay11.com",
+        "https://pirateproxylive.org"
+    )
     
     private val trackers = listOf(
         "udp://tracker.opentrackr.org:1337/announce",
@@ -200,6 +206,106 @@ class TPBScraper {
         return emptyList()
     }
 
+    private fun parseSizeToBytes(sizeStr: String): Long {
+        val parts = sizeStr.trim().split(Regex("\\s+"))
+        if (parts.isEmpty()) return 0L
+        return try {
+            val num = parts[0].toDouble()
+            val unit = if (parts.size > 1) parts[1].uppercase(Locale.ROOT) else "B"
+            when {
+                unit.contains("T") -> (num * 1024 * 1024 * 1024 * 1024).toLong()
+                unit.contains("G") -> (num * 1024 * 1024 * 1024).toLong()
+                unit.contains("M") -> (num * 1024 * 1024).toLong()
+                unit.contains("K") -> (num * 1024).toLong()
+                else -> num.toLong()
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun parseMirrorHtml(html: String): List<TorrentItem> {
+        val torrents = mutableListOf<TorrentItem>()
+        val rowRegex = Regex("<tr>(.*?)</tr>", RegexOption.DOT_MATCHES_ALL)
+        val titleRegex = Regex("""<div class="detName">\s*<a href="[^"]*/torrent/(\d+)/[^"]*"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL)
+        val magnetRegex = Regex("""href="(magnet:\?xt=urn:btih:([a-zA-Z0-9]+)[^"]*)"""")
+        val catRegex = Regex("""href="[^"]*/browse/(\d+)"""")
+        val sizeRegex = Regex("""Size\s+([0-9.]+\s*(?:&nbsp;|\s*)[KMGTPE]?i?B)""")
+        val numsRegex = Regex("""<td align="right">(\d+)</td>""")
+
+        val rows = rowRegex.findAll(html)
+        for (rowMatch in rows) {
+            val row = rowMatch.groupValues[1]
+            val titleMatch = titleRegex.find(row) ?: continue
+            val magnetMatch = magnetRegex.find(row) ?: continue
+
+            val id = titleMatch.groupValues[1]
+            val rawTitle = titleMatch.groupValues[2].trim()
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#039;", "'")
+                .replace("&nbsp;", " ")
+            val magnetLink = magnetMatch.groupValues[1]
+            val infoHash = magnetMatch.groupValues[2]
+
+            val catMatches = catRegex.findAll(row).toList()
+            val rawCatId = if (catMatches.isNotEmpty()) catMatches.last().groupValues[1] else "0"
+            val categoryName = categoryMap[rawCatId] ?: "Other"
+
+            val sizeMatch = sizeRegex.find(row)
+            val sizeStr = sizeMatch?.groupValues?.get(1)?.replace("&nbsp;", " ")?.trim() ?: "0 B"
+            val sizeBytes = parseSizeToBytes(sizeStr)
+
+            val numsMatches = numsRegex.findAll(row).toList()
+            val seeders = if (numsMatches.isNotEmpty()) numsMatches[0].groupValues[1].toIntOrNull() ?: 0 else 0
+            val leechers = if (numsMatches.size > 1) numsMatches[1].groupValues[1].toIntOrNull() ?: 0 else 0
+
+            torrents.add(
+                TorrentItem(
+                    id = id,
+                    infoHash = infoHash,
+                    title = rawTitle,
+                    magnetLink = magnetLink,
+                    sizeBytes = sizeBytes,
+                    seedersCount = seeders,
+                    leechersCount = leechers,
+                    uploadTimestamp = System.currentTimeMillis() / 1000L,
+                    uploader = "VIP/Member",
+                    category = categoryName,
+                    rawCategoryId = rawCatId
+                )
+            )
+        }
+        return torrents
+    }
+
+    private fun fetchFromWebMirrors(normalizedQuery: String, category: String = "0"): List<TorrentItem> {
+        val encodedQuery = URLEncoder.encode(normalizedQuery, "UTF-8").replace("+", "%20")
+        val catTarget = if (category.isEmpty()) "0" else category
+
+        for (mirror in webMirrors) {
+            val url = "$mirror/search/$encodedQuery/1/99/$catTarget"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+
+            try {
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val html = response.body?.string() ?: continue
+                    val items = parseMirrorHtml(html)
+                    if (items.isNotEmpty()) {
+                        return items
+                    }
+                }
+            } catch (e: Exception) {
+                // 自动尝试下一个活跃镜像节点
+            }
+        }
+        return emptyList()
+    }
+
     suspend fun search(query: String, category: String = "0"): Result<SearchResult> {
         return withContext(Dispatchers.IO) {
             try {
@@ -208,22 +314,31 @@ class TPBScraper {
                     return@withContext Result.success(SearchResult(emptyList(), "", false))
                 }
 
-                // 1. 精确规范化查询
-                val directResults = fetchTorrentsForQuery(normalized)
+                // 1. 先用 JSON API (apibay.org) 进行轻量检索
+                var directResults = fetchTorrentsForQuery(normalized)
+
+                // 2. 若 API 返回空（如 tokyo hot, batman, matrix 等 Sphinx 引擎溢出词），自动无缝无感切换至经典网页镜像爬虫！
+                if (directResults.isEmpty()) {
+                    directResults = fetchFromWebMirrors(normalized, category)
+                }
+
                 if (directResults.isNotEmpty()) {
                     return@withContext Result.success(SearchResult(directResults, normalized, false))
                 }
 
-                // 2. 自动触发智能模糊词与衍生词检索
+                // 3. 自动触发智能模糊词与衍生词检索
                 val candidates = generateFuzzyCandidates(normalized)
                 for (cand in candidates) {
-                    val candResults = fetchTorrentsForQuery(cand)
+                    var candResults = fetchTorrentsForQuery(cand)
+                    if (candResults.isEmpty()) {
+                        candResults = fetchFromWebMirrors(cand, category)
+                    }
                     if (candResults.isNotEmpty()) {
                         return@withContext Result.success(SearchResult(candResults, cand, true))
                     }
                 }
 
-                // 3. 若均未命中，返回空结果
+                // 4. 若均未命中，返回空结果
                 Result.success(SearchResult(emptyList(), normalized, false))
             } catch (e: Exception) {
                 Result.failure(e)

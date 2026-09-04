@@ -114,6 +114,7 @@ class MainActivity : AppCompatActivity() {
             "🎵 音乐音频" to "100",
             "📱 应用程序" to "300",
             "🎮 游戏娱乐" to "400",
+            "🔞 成人内容" to "500",
             "📦 其他资源" to "600"
         )
 
