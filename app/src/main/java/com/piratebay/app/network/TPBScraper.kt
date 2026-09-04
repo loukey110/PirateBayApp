@@ -166,20 +166,38 @@ class TPBScraper {
     }
 
     private fun fetchTorrentsForQuery(normalizedQuery: String): List<TorrentItem> {
-        val encodedQuery = URLEncoder.encode(normalizedQuery, "UTF-8")
-        val url = "$apiUrl/q.php?q=$encodedQuery&cat=0"
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0")
-            .build()
+        val encodedQuery = URLEncoder.encode(normalizedQuery, "UTF-8").replace("+", "%20")
+        val isSingleWord = !normalizedQuery.contains(" ")
 
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            return emptyList()
+        // 海盗湾 apibay 接口严重怪癖：
+        // 1. 单词检索（如 futurama, avatar, spiderman）若带 cat=0 会返回 0 条，必须使用 cat=（不指定分类）才能召回 100 条完整资源；
+        // 2. 多词检索（如 the boys, rick and morty）使用 cat=0 才能正确命中。
+        // 因此采取自适应双重探活策略：单词优先使用 cat=，多词优先使用 cat=0，未命中时立即自动回退重试另一种。
+        val catParams = if (isSingleWord) listOf("&cat=", "&cat=0") else listOf("&cat=0", "&cat=")
+
+        for (catParam in catParams) {
+            val url = "$apiUrl/q.php?q=$encodedQuery$catParam"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0")
+                .build()
+
+            try {
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val json = response.body?.string()
+                    if (!json.isNullOrBlank()) {
+                        val results = parseJsonResponse(json)
+                        if (results.isNotEmpty()) {
+                            return results
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // 网络异常继续尝试候选
+            }
         }
-
-        val json = response.body?.string() ?: return emptyList()
-        return parseJsonResponse(json)
+        return emptyList()
     }
 
     suspend fun search(query: String, category: String = "0"): Result<SearchResult> {
