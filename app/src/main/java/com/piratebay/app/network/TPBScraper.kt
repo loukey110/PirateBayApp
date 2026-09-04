@@ -20,10 +20,7 @@ class TPBScraper {
         .followRedirects(true)
         .build()
     
-    private val apiUrls = listOf(
-        "https://apibay.org",
-        "https://piratebay.party"
-    )
+    private val apiUrl = "https://apibay.org"
     
     private val trackers = listOf(
         "udp://tracker.opentrackr.org:1337/announce",
@@ -80,33 +77,45 @@ class TPBScraper {
         "605" to "Physibles",
         "699" to "Other Other"
     )
+
+    fun normalizeQuery(query: String): String {
+        val cleaned = query.trim()
+            .replace("\"", "")
+            .replace("“", "")
+            .replace("”", "")
+            .replace("'", "")
+            .replace(Regex("\\s+"), " ")
+        return cleaned.lowercase(Locale.ROOT)
+    }
     
     suspend fun search(query: String, category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            var lastException: Exception? = null
-
-            for (baseUrl in apiUrls) {
-                try {
-                    val url = "$baseUrl/q.php?q=$encodedQuery&cat=$category"
-                    val request = Request.Builder()
-                        .url(url)
-                        .header("User-Agent", "Mozilla/5.0")
-                        .build()
-                    
-                    val response = client.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        val json = response.body?.string() ?: continue
-                        val torrents = parseJsonResponse(json)
-                        return@withContext Result.success(torrents)
-                    } else {
-                        lastException = Exception("HTTP ${response.code} from $baseUrl")
-                    }
-                } catch (e: Exception) {
-                    lastException = e
+            try {
+                val normalized = normalizeQuery(query)
+                if (normalized.isEmpty()) {
+                    return@withContext Result.success(emptyList())
                 }
+
+                val encodedQuery = URLEncoder.encode(normalized, "UTF-8")
+                // 注意：apibay.org 服务端若接收非 0 的 cat 参数将返回空；
+                // 统一以 cat=0 查询获取最全数据，由客户端依据 rawCategoryId 进行本地快速分类过滤。
+                val url = "$apiUrl/q.php?q=$encodedQuery&cat=0"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
+                }
+                
+                val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
+                val torrents = parseJsonResponse(json)
+                Result.success(torrents)
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-            Result.failure(lastException ?: Exception("Network request failed"))
         }
     }
     
@@ -146,7 +155,8 @@ class TPBScraper {
                         leechersCount = leechers,
                         uploadTimestamp = added,
                         uploader = username,
-                        category = categoryName
+                        category = categoryName,
+                        rawCategoryId = category
                     )
                 )
             }
@@ -171,35 +181,30 @@ class TPBScraper {
     
     suspend fun getTopTorrents(category: String = "0"): Result<List<TorrentItem>> {
         return withContext(Dispatchers.IO) {
-            var lastException: Exception? = null
-
-            for (baseUrl in apiUrls) {
-                try {
-                    val path = if (category == "0") {
-                        "precompiled/data_top100_all.json"
-                    } else {
-                        "precompiled/data_top100_$category.json"
-                    }
-                    val topUrl = "$baseUrl/$path"
-                    
-                    val request = Request.Builder()
-                        .url(topUrl)
-                        .header("User-Agent", "Mozilla/5.0")
-                        .build()
-                    
-                    val response = client.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        val json = response.body?.string() ?: continue
-                        val torrents = parseJsonResponse(json)
-                        return@withContext Result.success(torrents)
-                    } else {
-                        lastException = Exception("HTTP ${response.code} from $baseUrl")
-                    }
-                } catch (e: Exception) {
-                    lastException = e
+            try {
+                val path = if (category == "0") {
+                    "precompiled/data_top100_all.json"
+                } else {
+                    "precompiled/data_top100_$category.json"
                 }
+                val topUrl = "$apiUrl/$path"
+                
+                val request = Request.Builder()
+                    .url(topUrl)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
+                }
+                
+                val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
+                val torrents = parseJsonResponse(json)
+                Result.success(torrents)
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-            Result.failure(lastException ?: Exception("Network request failed"))
         }
     }
 }

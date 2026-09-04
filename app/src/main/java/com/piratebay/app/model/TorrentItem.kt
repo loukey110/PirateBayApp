@@ -15,6 +15,7 @@ data class TorrentItem(
     val uploadTimestamp: Long,
     val uploader: String,
     val category: String,
+    val rawCategoryId: String = "0",
     val translatedTitle: String? = null,
     val isTranslating: Boolean = false
 ) {

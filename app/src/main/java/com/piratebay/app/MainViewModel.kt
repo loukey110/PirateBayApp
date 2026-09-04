@@ -80,13 +80,38 @@ class MainViewModel(
 
     fun setCategory(category: String) {
         currentCategory = category
+        applyFilterAndSort()
     }
 
     fun setSort(sortType: Int) {
         currentSort = sortType
-        if (rawTorrents.isNotEmpty()) {
-            val sortedList = sortTorrents(rawTorrents, sortType)
-            _uiState.value = UiState.Success(sortedList)
+        applyFilterAndSort()
+    }
+
+    private fun applyFilterAndSort() {
+        if (rawTorrents.isEmpty()) {
+            if (_uiState.value !is UiState.Loading && _uiState.value !is UiState.Idle) {
+                _uiState.value = UiState.Empty
+            }
+            return
+        }
+
+        val filtered = filterByCategory(rawTorrents, currentCategory)
+        if (filtered.isEmpty()) {
+            _uiState.value = UiState.Empty
+        } else {
+            val sorted = sortTorrents(filtered, currentSort)
+            _uiState.value = UiState.Success(sorted)
+        }
+    }
+
+    private fun filterByCategory(items: List<TorrentItem>, category: String): List<TorrentItem> {
+        if (category == "0" || category.isEmpty()) return items
+
+        // 大分类前缀匹配: 200 -> 2xx, 100 -> 1xx, 300 -> 3xx, 400 -> 4xx, 600 -> 6xx
+        val prefix = category.firstOrNull()?.toString() ?: return items
+        return items.filter { item ->
+            item.rawCategoryId == category || item.rawCategoryId.startsWith(prefix)
         }
     }
 
@@ -128,12 +153,7 @@ class MainViewModel(
             result.fold(
                 onSuccess = { list ->
                     rawTorrents = list
-                    if (list.isEmpty()) {
-                        _uiState.value = UiState.Empty
-                    } else {
-                        val sorted = sortTorrents(list, currentSort)
-                        _uiState.value = UiState.Success(sorted)
-                    }
+                    applyFilterAndSort()
                 },
                 onFailure = { error ->
                     _uiState.value = UiState.Error(error.message ?: "网络请求失败，请检查网络连接")

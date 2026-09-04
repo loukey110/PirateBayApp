@@ -151,10 +151,6 @@ class MainActivity : AppCompatActivity() {
     private fun selectCategoryChip(selectedIndex: Int, categoryId: String) {
         updateChipStyles(selectedIndex)
         viewModel.setCategory(categoryId)
-        val currentQuery = binding.searchEditText.text.toString().trim()
-        if (currentQuery.isNotEmpty()) {
-            viewModel.search(currentQuery, categoryId)
-        }
     }
 
     private fun updateChipStyles(selectedIndex: Int) {
