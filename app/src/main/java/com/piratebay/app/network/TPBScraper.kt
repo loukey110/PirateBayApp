@@ -78,6 +78,12 @@ class TPBScraper {
         "699" to "Other Other"
     )
 
+    data class SearchResult(
+        val torrents: List<TorrentItem>,
+        val effectiveQuery: String,
+        val isFuzzyMatched: Boolean = false
+    )
+
     fun normalizeQuery(query: String): String {
         val cleaned = query.trim()
             .replace("\"", "")
@@ -87,32 +93,120 @@ class TPBScraper {
             .replace(Regex("\\s+"), " ")
         return cleaned.lowercase(Locale.ROOT)
     }
-    
-    suspend fun search(query: String, category: String = "0"): Result<List<TorrentItem>> {
+
+    fun generateFuzzyCandidates(query: String): List<String> {
+        val q = normalizeQuery(query)
+        if (q.isEmpty()) return emptyList()
+
+        val words = q.split(" ").filter { it.isNotBlank() }
+        if (words.isEmpty()) return emptyList()
+
+        val candidates = mutableListOf<String>()
+
+        // 1. 词尾单复数形态扩展 (e.g. "the boy" -> "the boys", "game of throne" -> "game of thrones")
+        val lastWord = words.last()
+        if (lastWord.length > 3 && lastWord.endsWith("s")) {
+            // 复数转单数 (e.g. "the boys" -> "the boy", "thrones" -> "throne")
+            candidates.add((words.dropLast(1) + lastWord.dropLast(1)).joinToString(" "))
+            if (lastWord.length > 4 && lastWord.endsWith("es")) {
+                candidates.add((words.dropLast(1) + lastWord.dropLast(2)).joinToString(" "))
+            }
+        } else if (lastWord.isNotEmpty()) {
+            // 单数转复数 (e.g. "the boy" -> "the boys", "throne" -> "thrones")
+            candidates.add((words.dropLast(1) + "${lastWord}s").joinToString(" "))
+            if (lastWord.endsWith("o") || lastWord.endsWith("ch") || lastWord.endsWith("sh") ||
+                lastWord.endsWith("ss") || lastWord.endsWith("x") || lastWord.endsWith("z")
+            ) {
+                candidates.add((words.dropLast(1) + "${lastWord}es").joinToString(" "))
+            }
+        }
+
+        // 2. 冠词/常用停用词剥离 (e.g. "the walking dead" -> "walking dead")
+        val prefixes = listOf("the ", "a ", "an ")
+        for (prefix in prefixes) {
+            if (q.startsWith(prefix)) {
+                val withoutPrefix = q.removePrefix(prefix).trim()
+                if (withoutPrefix.isNotEmpty()) {
+                    candidates.add(withoutPrefix)
+                    val subWords = withoutPrefix.split(" ").filter { it.isNotBlank() }
+                    if (subWords.isNotEmpty()) {
+                        val subLast = subWords.last()
+                        if (!subLast.endsWith("s")) {
+                            candidates.add((subWords.dropLast(1) + "${subLast}s").joinToString(" "))
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. 标点、连字符与空格变体 (e.g. "spider-man" <-> "spiderman", "spider man")
+        if (q.contains("-") || q.contains(".") || q.contains("_")) {
+            candidates.add(q.replace("-", " ").replace(".", " ").replace("_", " ").replace(Regex("\\s+"), " ").trim())
+            candidates.add(q.replace("-", "").replace(".", "").replace("_", ""))
+        } else if (q.contains(" ")) {
+            candidates.add(q.replace(" ", ""))
+        }
+
+        // 4. 多词短语前缀/后缀子集尝试
+        if (words.size > 2) {
+            candidates.add(words.drop(1).joinToString(" "))
+            candidates.add(words.dropLast(1).joinToString(" "))
+        }
+
+        // 去重并过滤掉原词
+        val seen = mutableSetOf(q)
+        val finalCandidates = mutableListOf<String>()
+        for (cand in candidates) {
+            val normalized = cand.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
+            if (normalized.isNotEmpty() && seen.add(normalized)) {
+                finalCandidates.add(normalized)
+            }
+        }
+        return finalCandidates
+    }
+
+    private fun fetchTorrentsForQuery(normalizedQuery: String): List<TorrentItem> {
+        val encodedQuery = URLEncoder.encode(normalizedQuery, "UTF-8")
+        val url = "$apiUrl/q.php?q=$encodedQuery&cat=0"
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .build()
+
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            return emptyList()
+        }
+
+        val json = response.body?.string() ?: return emptyList()
+        return parseJsonResponse(json)
+    }
+
+    suspend fun search(query: String, category: String = "0"): Result<SearchResult> {
         return withContext(Dispatchers.IO) {
             try {
                 val normalized = normalizeQuery(query)
                 if (normalized.isEmpty()) {
-                    return@withContext Result.success(emptyList())
+                    return@withContext Result.success(SearchResult(emptyList(), "", false))
                 }
 
-                val encodedQuery = URLEncoder.encode(normalized, "UTF-8")
-                // 注意：apibay.org 服务端若接收非 0 的 cat 参数将返回空；
-                // 统一以 cat=0 查询获取最全数据，由客户端依据 rawCategoryId 进行本地快速分类过滤。
-                val url = "$apiUrl/q.php?q=$encodedQuery&cat=0"
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "Mozilla/5.0")
-                    .build()
-                
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
+                // 1. 精确规范化查询
+                val directResults = fetchTorrentsForQuery(normalized)
+                if (directResults.isNotEmpty()) {
+                    return@withContext Result.success(SearchResult(directResults, normalized, false))
                 }
-                
-                val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                val torrents = parseJsonResponse(json)
-                Result.success(torrents)
+
+                // 2. 自动触发智能模糊词与衍生词检索
+                val candidates = generateFuzzyCandidates(normalized)
+                for (cand in candidates) {
+                    val candResults = fetchTorrentsForQuery(cand)
+                    if (candResults.isNotEmpty()) {
+                        return@withContext Result.success(SearchResult(candResults, cand, true))
+                    }
+                }
+
+                // 3. 若均未命中，返回空结果
+                Result.success(SearchResult(emptyList(), normalized, false))
             } catch (e: Exception) {
                 Result.failure(e)
             }

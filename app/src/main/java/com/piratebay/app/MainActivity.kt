@@ -296,7 +296,11 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.visibility = View.GONE
                 binding.errorView.visibility = View.GONE
                 binding.torrentsRecyclerView.visibility = View.VISIBLE
-                binding.statusSummaryTextView.text = "找到 ${state.torrents.size} 条资源结果"
+                if (state.isFuzzyMatched && state.effectiveQuery.isNotBlank()) {
+                    binding.statusSummaryTextView.text = "智能匹配 \"${state.effectiveQuery}\" · 找到 ${state.torrents.size} 条结果"
+                } else {
+                    binding.statusSummaryTextView.text = "找到 ${state.torrents.size} 条资源结果"
+                }
                 adapter.submitList(state.torrents)
             }
             is UiState.Empty -> {

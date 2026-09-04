@@ -16,7 +16,11 @@ import kotlinx.coroutines.launch
 sealed interface UiState {
     object Idle : UiState
     object Loading : UiState
-    data class Success(val torrents: List<TorrentItem>) : UiState
+    data class Success(
+        val torrents: List<TorrentItem>,
+        val effectiveQuery: String = "",
+        val isFuzzyMatched: Boolean = false
+    ) : UiState
     object Empty : UiState
     data class Error(val message: String) : UiState
 }
@@ -41,6 +45,12 @@ class MainViewModel(
     var currentQuery: String = ""
         private set
 
+    var effectiveQuery: String = ""
+        private set
+
+    var isFuzzyMatched: Boolean = false
+        private set
+
     var currentCategory: String = "0"
         private set
 
@@ -58,16 +68,48 @@ class MainViewModel(
         currentQuery = trimmedQuery
         currentCategory = category
         isTop100Mode = false
+        _uiState.value = UiState.Loading
 
-        executeFetch { scraper.search(trimmedQuery, category) }
+        viewModelScope.launch {
+            val result = scraper.search(trimmedQuery, category)
+            result.fold(
+                onSuccess = { searchRes ->
+                    rawTorrents = searchRes.torrents
+                    effectiveQuery = searchRes.effectiveQuery
+                    isFuzzyMatched = searchRes.isFuzzyMatched
+
+                    if (searchRes.isFuzzyMatched && searchRes.effectiveQuery.isNotBlank()) {
+                        emitEvent("未直接搜到，已为你联想 \"${searchRes.effectiveQuery}\"")
+                    }
+                    applyFilterAndSort()
+                },
+                onFailure = { error ->
+                    _uiState.value = UiState.Error(error.message ?: "网络请求失败，请检查网络连接")
+                }
+            )
+        }
     }
 
     fun loadTop100(category: String) {
         currentQuery = ""
+        effectiveQuery = ""
+        isFuzzyMatched = false
         currentCategory = category
         isTop100Mode = true
+        _uiState.value = UiState.Loading
 
-        executeFetch { scraper.getTopTorrents(category) }
+        viewModelScope.launch {
+            val result = scraper.getTopTorrents(category)
+            result.fold(
+                onSuccess = { list ->
+                    rawTorrents = list
+                    applyFilterAndSort()
+                },
+                onFailure = { error ->
+                    _uiState.value = UiState.Error(error.message ?: "网络请求失败，请检查网络连接")
+                }
+            )
+        }
     }
 
     fun refresh() {
@@ -101,7 +143,11 @@ class MainViewModel(
             _uiState.value = UiState.Empty
         } else {
             val sorted = sortTorrents(filtered, currentSort)
-            _uiState.value = UiState.Success(sorted)
+            _uiState.value = UiState.Success(
+                torrents = sorted,
+                effectiveQuery = effectiveQuery,
+                isFuzzyMatched = isFuzzyMatched
+            )
         }
     }
 
@@ -140,23 +186,6 @@ class MainViewModel(
                 onFailure = { error ->
                     updateTorrentItem(item.id) { it.copy(isTranslating = false) }
                     emitEvent("翻译失败: ${error.message}")
-                }
-            )
-        }
-    }
-
-    private fun executeFetch(fetcher: suspend () -> Result<List<TorrentItem>>) {
-        _uiState.value = UiState.Loading
-
-        viewModelScope.launch {
-            val result = fetcher()
-            result.fold(
-                onSuccess = { list ->
-                    rawTorrents = list
-                    applyFilterAndSort()
-                },
-                onFailure = { error ->
-                    _uiState.value = UiState.Error(error.message ?: "网络请求失败，请检查网络连接")
                 }
             )
         }
