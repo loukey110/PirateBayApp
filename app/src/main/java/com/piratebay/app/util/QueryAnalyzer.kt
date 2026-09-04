@@ -167,10 +167,10 @@ object QueryAnalyzer {
             chips.add("720p")
         }
 
-        // 检查季数 (S01, S02, S03, S04, S05 ...)
-        for (season in 1..9) {
+        // 检查季数 (支持 S01 到 S35 甚至更高)
+        for (season in 1..35) {
             val sPad = String.format(Locale.US, "%02d", season)
-            val sRegex = Regex("""(?i)\b(s$season|s$sPad|season\s*$season)\b""")
+            val sRegex = Regex("""(?i)\b(s0?$season|s$sPad|season\s*0?$season)\b""")
             if (titles.any { sRegex.containsMatchIn(it) }) {
                 chips.add("S$sPad")
             }
@@ -206,7 +206,7 @@ object QueryAnalyzer {
             "整季合集" -> Regex("""(?i)\b(complete|pack|all\.seasons|seasons?\s*[1-9]-[1-9])\b""")
             "FitGirl" -> Regex("""(?i)\bfitgirl\b""")
             else -> {
-                if (chip.startsWith("S") && chip.length == 3) {
+                if (chip.startsWith("S") && chip.length >= 3) {
                     val num = chip.substring(1).toIntOrNull()
                     if (num != null) {
                         Regex("""(?i)\b(s0?$num|s${chip.substring(1)}|season\s*0?$num)\b""")

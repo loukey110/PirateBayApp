@@ -260,6 +260,10 @@ class TPBScraper {
             val seeders = if (numsMatches.isNotEmpty()) numsMatches[0].groupValues[1].toIntOrNull() ?: 0 else 0
             val leechers = if (numsMatches.size > 1) numsMatches[1].groupValues[1].toIntOrNull() ?: 0 else 0
 
+            val dateMatch = Regex("""Uploaded\s+([^,]+),""").find(row)
+            val dateStr = dateMatch?.groupValues?.get(1)?.replace("&nbsp;", " ")?.trim() ?: ""
+            val uploadTs = parseUploadDateToTimestamp(dateStr)
+
             torrents.add(
                 TorrentItem(
                     id = id,
@@ -269,7 +273,7 @@ class TPBScraper {
                     sizeBytes = sizeBytes,
                     seedersCount = seeders,
                     leechersCount = leechers,
-                    uploadTimestamp = System.currentTimeMillis() / 1000L,
+                    uploadTimestamp = uploadTs,
                     uploader = "VIP/Member",
                     category = categoryName,
                     rawCategoryId = rawCatId
@@ -277,6 +281,68 @@ class TPBScraper {
             )
         }
         return torrents
+    }
+
+    private fun parseUploadDateToTimestamp(dateStr: String): Long {
+        if (dateStr.isEmpty()) return System.currentTimeMillis() / 1000L
+        return try {
+            val now = Calendar.getInstance()
+            when {
+                dateStr.startsWith("Y-day", ignoreCase = true) -> {
+                    now.add(Calendar.DAY_OF_YEAR, -1)
+                    now.timeInMillis / 1000L
+                }
+                dateStr.contains("mins ago", ignoreCase = true) -> {
+                    val mins = dateStr.split(" ")[0].toIntOrNull() ?: 1
+                    now.add(Calendar.MINUTE, -mins)
+                    now.timeInMillis / 1000L
+                }
+                dateStr.contains("<b>", ignoreCase = true) || dateStr.contains(":") && !dateStr.contains("-") -> {
+                    now.timeInMillis / 1000L
+                }
+                else -> {
+                    // 格式如 "09-13 2024" 或 "09-13 11:34"
+                    val parts = dateStr.split(" ")
+                    if (parts.size >= 2) {
+                        val md = parts[0].split("-")
+                        val m = md.getOrNull(0)?.toIntOrNull() ?: (now.get(Calendar.MONTH) + 1)
+                        val d = md.getOrNull(1)?.toIntOrNull() ?: now.get(Calendar.DAY_OF_MONTH)
+                        val yr = parts[1].toIntOrNull() ?: now.get(Calendar.YEAR)
+                        val cal = Calendar.getInstance()
+                        cal.set(yr, m - 1, d)
+                        cal.timeInMillis / 1000L
+                    } else {
+                        System.currentTimeMillis() / 1000L
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            System.currentTimeMillis() / 1000L
+        }
+    }
+
+    private fun fetchTopFromWebMirrors(category: String = "0"): List<TorrentItem> {
+        val catPath = if (category == "0" || category.isEmpty()) "all" else category
+        for (mirror in webMirrors) {
+            val url = "$mirror/top/$catPath"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+            try {
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val html = response.body?.string() ?: continue
+                    val items = parseMirrorHtml(html)
+                    if (items.isNotEmpty()) {
+                        return items
+                    }
+                }
+            } catch (e: Exception) {
+                // 继续尝试下一个镜像
+            }
+        }
+        return emptyList()
     }
 
     private fun fetchFromWebMirrors(normalizedQuery: String, category: String = "0"): List<TorrentItem> {
@@ -421,14 +487,28 @@ class TPBScraper {
                     .header("User-Agent", "Mozilla/5.0")
                     .build()
                 
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
+                try {
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val json = response.body?.string()
+                        if (!json.isNullOrBlank()) {
+                            val torrents = parseJsonResponse(json)
+                            if (torrents.isNotEmpty()) {
+                                return@withContext Result.success(torrents)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // API 失败，降级到镜像站抓取
                 }
                 
-                val json = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                val torrents = parseJsonResponse(json)
-                Result.success(torrents)
+                // 降级：从网页镜像站拉取 Top 100
+                val mirrorTop = fetchTopFromWebMirrors(category)
+                if (mirrorTop.isNotEmpty()) {
+                    return@withContext Result.success(mirrorTop)
+                }
+
+                Result.failure(Exception("无法获取 Top 100 数据，请检查网络"))
             } catch (e: Exception) {
                 Result.failure(e)
             }

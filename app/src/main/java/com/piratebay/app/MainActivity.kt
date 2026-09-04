@@ -21,6 +21,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.piratebay.app.adapter.TorrentAdapter
 import com.piratebay.app.databinding.ActivityMainBinding
+import com.piratebay.app.util.SearchHistoryManager
 import androidx.core.widget.doAfterTextChanged
 import kotlinx.coroutines.launch
 
@@ -29,15 +30,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val viewModel: MainViewModel by viewModels()
     private lateinit var adapter: TorrentAdapter
-
-    private val categories = mapOf(
-        "全部" to "0",
-        "视频" to "200",
-        "音频" to "100",
-        "应用" to "300",
-        "游戏" to "400",
-        "其他" to "600"
-    )
+    private lateinit var historyManager: SearchHistoryManager
 
     private val top100Categories = listOf(
         "全部 Top 100" to "0",
@@ -97,7 +90,10 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        historyManager = SearchHistoryManager(this)
+
         setupCategoryChips()
+        setupHistoryChips()
         setupSortButton()
         setupRecyclerView()
         setupListeners()
@@ -151,6 +147,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectCategoryChip(selectedIndex: Int, categoryId: String) {
         updateChipStyles(selectedIndex)
+        // 居中平滑滑动当前 Chip
+        val selectedView = chipButtons.getOrNull(selectedIndex)
+        if (selectedView != null) {
+            val scrollX = selectedView.left - (binding.categoryChipsScrollView.width / 2) + (selectedView.width / 2)
+            binding.categoryChipsScrollView.smoothScrollTo(scrollX.coerceAtLeast(0), 0)
+        }
         viewModel.setCategory(categoryId)
     }
 
@@ -166,6 +168,81 @@ class MainActivity : AppCompatActivity() {
                 chip.typeface = android.graphics.Typeface.DEFAULT
             }
         }
+    }
+
+    private fun setupHistoryChips() {
+        val historyList = historyManager.getHistory()
+        if (historyList.isEmpty()) {
+            binding.historyChipsScrollView.visibility = View.GONE
+            binding.historyChipsContainer.removeAllViews()
+            return
+        }
+
+        binding.historyChipsScrollView.visibility = View.VISIBLE
+        binding.historyChipsContainer.removeAllViews()
+
+        // 历史标签：图标前缀提示
+        val historyLabel = android.widget.TextView(this).apply {
+            text = "🕒 历史:"
+            textSize = 11f
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+            setPadding(0, 0, dpToPx(6), 0)
+        }
+        binding.historyChipsContainer.addView(historyLabel)
+
+        for (query in historyList) {
+            val chip = androidx.appcompat.widget.AppCompatButton(this).apply {
+                text = query
+                textSize = 11f
+                isAllCaps = false
+                includeFontPadding = false
+                minHeight = 0
+                minWidth = 0
+                setPadding(dpToPx(10), 0, dpToPx(10), 0)
+                setBackgroundResource(R.drawable.history_chip_bg)
+                setTextColor(androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+
+                val layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    dpToPx(28)
+                ).apply {
+                    marginEnd = dpToPx(6)
+                }
+                this.layoutParams = layoutParams
+
+                setOnClickListener {
+                    binding.searchEditText.setText(query)
+                    binding.searchEditText.setSelection(query.length)
+                    performSearch()
+                }
+            }
+            binding.historyChipsContainer.addView(chip)
+        }
+
+        // 清空历史按钮
+        val clearBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
+            text = "🗑 清空"
+            textSize = 11f
+            isAllCaps = false
+            includeFontPadding = false
+            minHeight = 0
+            minWidth = 0
+            setPadding(dpToPx(8), 0, dpToPx(8), 0)
+            setBackgroundResource(R.drawable.history_chip_bg)
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+
+            val layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                dpToPx(28)
+            )
+            this.layoutParams = layoutParams
+
+            setOnClickListener {
+                historyManager.clearHistory()
+                setupHistoryChips()
+            }
+        }
+        binding.historyChipsContainer.addView(clearBtn)
     }
 
     private fun dpToPx(dp: Int): Int {
@@ -228,6 +305,27 @@ class MainActivity : AppCompatActivity() {
         )
         binding.torrentsRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.torrentsRecyclerView.adapter = adapter
+
+        // 监听滚动显示/隐藏回到顶部按钮
+        binding.torrentsRecyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+                val layoutManager = recyclerView.layoutManager as? LinearLayoutManager
+                val firstVisibleItem = layoutManager?.findFirstVisibleItemPosition() ?: 0
+                if (firstVisibleItem > 4) {
+                    if (binding.backToTopButton.visibility != View.VISIBLE) {
+                        binding.backToTopButton.visibility = View.VISIBLE
+                        binding.backToTopButton.animate().alpha(1f).setDuration(200).start()
+                    }
+                } else {
+                    if (binding.backToTopButton.visibility == View.VISIBLE) {
+                        binding.backToTopButton.animate().alpha(0f).setDuration(200).withEndAction {
+                            binding.backToTopButton.visibility = View.GONE
+                        }.start()
+                    }
+                }
+            }
+        })
     }
 
     private fun setupListeners() {
@@ -237,6 +335,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.topButton.setOnClickListener {
             showTop100CategoryDialog()
+        }
+
+        binding.backToTopButton.setOnClickListener {
+            binding.torrentsRecyclerView.smoothScrollToPosition(0)
         }
 
         binding.searchEditText.setOnEditorActionListener { _, _, _ ->
@@ -399,6 +501,10 @@ class MainActivity : AppCompatActivity() {
             binding.searchEditText.error = "请输入搜索关键词"
             return
         }
+        // 记录并刷新历史记录
+        historyManager.addSearchQuery(query)
+        setupHistoryChips()
+
         viewModel.search(query)
     }
 
@@ -426,11 +532,19 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         } catch (e: ActivityNotFoundException) {
             copyToClipboard(magnetLink, "磁力链接")
-            Toast.makeText(this, "未检测到支持磁力的客户端，已复制链接到剪贴板", Toast.LENGTH_SHORT).show()
+            showNoTorrentClientDialog()
         } catch (e: Exception) {
             copyToClipboard(magnetLink, "磁力链接")
             Toast.makeText(this, "无法启动外部应用，已复制链接到剪贴板", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun showNoTorrentClientDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("未检测到 BT/磁力下载器")
+            .setMessage("已自动将磁力链接复制到剪贴板！\n\n系统暂未找到支持处理 magnet: 协议的客户端。推荐在应用商店或浏览器安装：\n• 手机迅雷\n• Flud (纯净 BT 客户端)\n• 1DM / 闪电下载\n• uTorrent / BitTorrent")
+            .setPositiveButton("我知道了", null)
+            .show()
     }
 
     private fun copyToClipboard(text: String, label: String) {

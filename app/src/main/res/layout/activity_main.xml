@@ -154,11 +154,31 @@
 
             </LinearLayout>
 
-            <!-- 横向滚动分类 Chip 胶囊栏 -->
+            <!-- 横向滚动搜索历史记录 Chip 栏 (带清除按钮) -->
             <HorizontalScrollView
+                android:id="@+id/historyChipsScrollView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/historyChipsContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingBottom="2dp" />
+
+            </HorizontalScrollView>
+
+            <!-- 横向滚动分类 Chip 胶囊栏 -->
+            <HorizontalScrollView
+                android:id="@+id/categoryChipsScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 android:scrollbars="none">
 
                 <LinearLayout
@@ -287,5 +307,22 @@
         </FrameLayout>
 
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- 回到顶部悬浮按钮 -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/backToTopButton"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="18dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/back_to_top_bg"
+        android:elevation="6dp"
+        android:gravity="center"
+        android:text="↑"
+        android:textColor="@color/orange_primary"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
