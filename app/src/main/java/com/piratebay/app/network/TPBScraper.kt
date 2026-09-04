@@ -3,6 +3,9 @@ package com.piratebay.app.network
 import com.piratebay.app.model.TorrentItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -321,55 +324,54 @@ class TPBScraper {
         }
     }
 
-    private fun fetchTopFromWebMirrors(category: String = "0"): List<TorrentItem> {
+    private suspend fun fetchTopFromWebMirrors(category: String = "0"): List<TorrentItem> {
         val catPath = if (category == "0" || category.isEmpty()) "all" else category
-        for (mirror in webMirrors) {
-            val url = "$mirror/top/$catPath"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-            try {
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val html = response.body?.string() ?: continue
-                    val items = parseMirrorHtml(html)
-                    if (items.isNotEmpty()) {
-                        return items
-                    }
-                }
-            } catch (e: Exception) {
-                // 继续尝试下一个镜像
-            }
-        }
-        return emptyList()
+        return fetchConcurrentRace { mirror -> "$mirror/top/$catPath" }
     }
 
-    private fun fetchFromWebMirrors(normalizedQuery: String, category: String = "0"): List<TorrentItem> {
+    private suspend fun fetchFromWebMirrors(normalizedQuery: String, category: String = "0"): List<TorrentItem> {
         val encodedQuery = URLEncoder.encode(normalizedQuery, "UTF-8").replace("+", "%20")
         val catTarget = if (category.isEmpty()) "0" else category
+        return fetchConcurrentRace { mirror -> "$mirror/search/$encodedQuery/1/99/$catTarget" }
+    }
 
-        for (mirror in webMirrors) {
-            val url = "$mirror/search/$encodedQuery/1/99/$catTarget"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-
-            try {
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val html = response.body?.string() ?: continue
-                    val items = parseMirrorHtml(html)
-                    if (items.isNotEmpty()) {
-                        return items
+    private suspend fun fetchConcurrentRace(urlBuilder: (String) -> String): List<TorrentItem> = kotlinx.coroutines.supervisorScope {
+        val channel = kotlinx.coroutines.channels.Channel<Result<List<TorrentItem>>>(webMirrors.size)
+        val jobs = webMirrors.map { mirror ->
+            launch(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder()
+                        .url(urlBuilder(mirror))
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                        .build()
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val html = response.body?.string() ?: ""
+                        val items = parseMirrorHtml(html)
+                        if (items.isNotEmpty()) {
+                            channel.send(Result.success(items))
+                            return@launch
+                        }
                     }
+                    channel.send(Result.failure(Exception("Not found or failed")))
+                } catch (e: Exception) {
+                    channel.send(Result.failure(e))
                 }
-            } catch (e: Exception) {
-                // 自动尝试下一个活跃镜像节点
             }
         }
-        return emptyList()
+
+        var result: List<TorrentItem> = emptyList()
+        for (i in webMirrors.indices) {
+            val res = channel.receive()
+            if (res.isSuccess) {
+                result = res.getOrNull() ?: emptyList()
+                break
+            }
+        }
+        
+        // 当任意一个请求成功或全部失败时，取消其它还在执行的挂起网络请求
+        jobs.forEach { it.cancel() }
+        result
     }
 
     suspend fun search(query: String, category: String = "0"): Result<SearchResult> {

@@ -308,19 +308,28 @@ class MainActivity : AppCompatActivity() {
 
         // 监听滚动显示/隐藏回到顶部按钮
         binding.torrentsRecyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            private var isAnimating = false
+            
             override fun onScrolled(recyclerView: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {
                 super.onScrolled(recyclerView, dx, dy)
                 val layoutManager = recyclerView.layoutManager as? LinearLayoutManager
                 val firstVisibleItem = layoutManager?.findFirstVisibleItemPosition() ?: 0
+                
                 if (firstVisibleItem > 4) {
-                    if (binding.backToTopButton.visibility != View.VISIBLE) {
+                    if (binding.backToTopButton.visibility != View.VISIBLE && !isAnimating) {
+                        isAnimating = true
                         binding.backToTopButton.visibility = View.VISIBLE
-                        binding.backToTopButton.animate().alpha(1f).setDuration(200).start()
+                        binding.backToTopButton.alpha = 0f
+                        binding.backToTopButton.animate().alpha(1f).setDuration(200).withEndAction {
+                            isAnimating = false
+                        }.start()
                     }
                 } else {
-                    if (binding.backToTopButton.visibility == View.VISIBLE) {
+                    if (binding.backToTopButton.visibility == View.VISIBLE && !isAnimating) {
+                        isAnimating = true
                         binding.backToTopButton.animate().alpha(0f).setDuration(200).withEndAction {
                             binding.backToTopButton.visibility = View.GONE
+                            isAnimating = false
                         }.start()
                     }
                 }

@@ -183,36 +183,38 @@ class MainViewModel(
             return
         }
 
-        // 1. 频道大分类过滤
-        var filtered = filterByCategory(rawTorrents, currentCategory)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            // 1. 频道大分类过滤
+            var filtered = filterByCategory(rawTorrents, currentCategory)
 
-        // 2. 搜索词中自带的季数/分辨率条件过滤
-        parsedQuery?.let { p ->
-            if (p.hasConstraints && _selectedQualityChip.value == null) {
-                val constrained = com.piratebay.app.util.QueryAnalyzer.filterByParsedConstraints(filtered, p)
-                if (constrained.isNotEmpty()) {
-                    filtered = constrained
+            // 2. 搜索词中自带的季数/分辨率条件过滤
+            parsedQuery?.let { p ->
+                if (p.hasConstraints && _selectedQualityChip.value == null) {
+                    val constrained = com.piratebay.app.util.QueryAnalyzer.filterByParsedConstraints(filtered, p)
+                    if (constrained.isNotEmpty()) {
+                        filtered = constrained
+                    }
                 }
             }
-        }
 
-        // 3. 用户手动点击的动态规格微标签过滤 (4K, 1080p, S04 等)
-        _selectedQualityChip.value?.let { chip ->
-            val chipFiltered = com.piratebay.app.util.QueryAnalyzer.filterByQualityChip(filtered, chip)
-            if (chipFiltered.isNotEmpty()) {
-                filtered = chipFiltered
+            // 3. 用户手动点击的动态规格微标签过滤 (4K, 1080p, S04 等)
+            _selectedQualityChip.value?.let { chip ->
+                val chipFiltered = com.piratebay.app.util.QueryAnalyzer.filterByQualityChip(filtered, chip)
+                if (chipFiltered.isNotEmpty()) {
+                    filtered = chipFiltered
+                }
             }
-        }
 
-        if (filtered.isEmpty()) {
-            _uiState.value = UiState.Empty
-        } else {
-            val sorted = sortTorrents(filtered, currentSort)
-            _uiState.value = UiState.Success(
-                torrents = sorted,
-                effectiveQuery = effectiveQuery,
-                isFuzzyMatched = isFuzzyMatched
-            )
+            if (filtered.isEmpty()) {
+                _uiState.value = UiState.Empty
+            } else {
+                val sorted = sortTorrents(filtered, currentSort)
+                _uiState.value = UiState.Success(
+                    torrents = sorted,
+                    effectiveQuery = effectiveQuery,
+                    isFuzzyMatched = isFuzzyMatched
+                )
+            }
         }
     }
 
