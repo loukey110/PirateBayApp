@@ -127,6 +127,16 @@
                     android:textColorHint="@color/text_muted"
                     android:textSize="14sp" />
 
+                <TextView
+                    android:id="@+id/clearSearchButton"
+                    android:layout_width="32dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="✕"
+                    android:textColor="@color/text_muted"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+
                 <androidx.appcompat.widget.AppCompatButton
                     android:id="@+id/searchButton"
                     android:layout_width="68dp"
@@ -153,6 +163,24 @@
 
                 <LinearLayout
                     android:id="@+id/categoryChipsContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingBottom="2dp" />
+
+            </HorizontalScrollView>
+
+            <!-- 动态规格微标签栏 (4K, 1080p, S04, BluRay 等) -->
+            <HorizontalScrollView
+                android:id="@+id/qualityChipsScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/qualityChipsContainer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"

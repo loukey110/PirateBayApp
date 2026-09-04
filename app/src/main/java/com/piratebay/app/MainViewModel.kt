@@ -42,6 +42,14 @@ class MainViewModel(
 
     private var rawTorrents: List<TorrentItem> = emptyList()
 
+    private val _qualityChips = MutableStateFlow<List<String>>(emptyList())
+    val qualityChips: StateFlow<List<String>> = _qualityChips.asStateFlow()
+
+    private val _selectedQualityChip = MutableStateFlow<String?>(null)
+    val selectedQualityChip: StateFlow<String?> = _selectedQualityChip.asStateFlow()
+
+    private var parsedQuery: com.piratebay.app.util.ParsedQuery? = null
+
     var currentQuery: String = ""
         private set
 
@@ -68,22 +76,50 @@ class MainViewModel(
         currentQuery = trimmedQuery
         currentCategory = category
         isTop100Mode = false
+        _selectedQualityChip.value = null
         _uiState.value = UiState.Loading
 
         viewModelScope.launch {
-            val result = scraper.search(trimmedQuery, category)
+            // 1. 智能语义解析（提取季数、集数、分辨率与中文字符）
+            val parsed = com.piratebay.app.util.QueryAnalyzer.parse(trimmedQuery)
+            parsedQuery = parsed
+
+            var searchTarget = parsed.coreQuery
+            var translatedNote = ""
+
+            // 2. 中文自动翻译转换为英文原名
+            if (parsed.isChinese && translationService.isConfigured()) {
+                val transResult = translationService.translate(parsed.coreQuery, from = "zh", to = "en")
+                transResult.onSuccess { enQuery ->
+                    val cleanEn = enQuery.trim().lowercase(java.util.Locale.ROOT)
+                    if (cleanEn.isNotBlank() && cleanEn != parsed.coreQuery.lowercase(java.util.Locale.ROOT)) {
+                        searchTarget = cleanEn
+                        translatedNote = enQuery
+                    }
+                }
+            }
+
+            // 3. 执行检索
+            val result = scraper.search(searchTarget, category)
             result.fold(
                 onSuccess = { searchRes ->
                     rawTorrents = searchRes.torrents
-                    effectiveQuery = searchRes.effectiveQuery
-                    isFuzzyMatched = searchRes.isFuzzyMatched
+                    effectiveQuery = if (translatedNote.isNotBlank()) translatedNote else searchRes.effectiveQuery
+                    isFuzzyMatched = searchRes.isFuzzyMatched || translatedNote.isNotBlank()
 
-                    if (searchRes.isFuzzyMatched && searchRes.effectiveQuery.isNotBlank()) {
+                    if (translatedNote.isNotBlank()) {
+                        emitEvent("已自动为你识别英文原名 \"$translatedNote\"")
+                    } else if (searchRes.isFuzzyMatched && searchRes.effectiveQuery.isNotBlank()) {
                         emitEvent("未直接搜到，已为你联想 \"${searchRes.effectiveQuery}\"")
                     }
+
+                    // 4. 提取可用的规格微标签 (4K, 1080p, S01, S02 等)
+                    _qualityChips.value = com.piratebay.app.util.QueryAnalyzer.extractFilterChips(rawTorrents)
+
                     applyFilterAndSort()
                 },
                 onFailure = { error ->
+                    _qualityChips.value = emptyList()
                     _uiState.value = UiState.Error(error.message ?: "网络请求失败，请检查网络连接")
                 }
             )
@@ -94,6 +130,8 @@ class MainViewModel(
         currentQuery = ""
         effectiveQuery = ""
         isFuzzyMatched = false
+        _selectedQualityChip.value = null
+        parsedQuery = null
         currentCategory = category
         isTop100Mode = true
         _uiState.value = UiState.Loading
@@ -103,9 +141,11 @@ class MainViewModel(
             result.fold(
                 onSuccess = { list ->
                     rawTorrents = list
+                    _qualityChips.value = com.piratebay.app.util.QueryAnalyzer.extractFilterChips(rawTorrents)
                     applyFilterAndSort()
                 },
                 onFailure = { error ->
+                    _qualityChips.value = emptyList()
                     _uiState.value = UiState.Error(error.message ?: "网络请求失败，请检查网络连接")
                 }
             )
@@ -130,6 +170,11 @@ class MainViewModel(
         applyFilterAndSort()
     }
 
+    fun selectQualityChip(chip: String?) {
+        _selectedQualityChip.value = if (_selectedQualityChip.value == chip) null else chip
+        applyFilterAndSort()
+    }
+
     private fun applyFilterAndSort() {
         if (rawTorrents.isEmpty()) {
             if (_uiState.value !is UiState.Loading && _uiState.value !is UiState.Idle) {
@@ -138,7 +183,27 @@ class MainViewModel(
             return
         }
 
-        val filtered = filterByCategory(rawTorrents, currentCategory)
+        // 1. 频道大分类过滤
+        var filtered = filterByCategory(rawTorrents, currentCategory)
+
+        // 2. 搜索词中自带的季数/分辨率条件过滤
+        parsedQuery?.let { p ->
+            if (p.hasConstraints && _selectedQualityChip.value == null) {
+                val constrained = com.piratebay.app.util.QueryAnalyzer.filterByParsedConstraints(filtered, p)
+                if (constrained.isNotEmpty()) {
+                    filtered = constrained
+                }
+            }
+        }
+
+        // 3. 用户手动点击的动态规格微标签过滤 (4K, 1080p, S04 等)
+        _selectedQualityChip.value?.let { chip ->
+            val chipFiltered = com.piratebay.app.util.QueryAnalyzer.filterByQualityChip(filtered, chip)
+            if (chipFiltered.isNotEmpty()) {
+                filtered = chipFiltered
+            }
+        }
+
         if (filtered.isEmpty()) {
             _uiState.value = UiState.Empty
         } else {

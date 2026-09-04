@@ -21,7 +21,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.piratebay.app.adapter.TorrentAdapter
 import com.piratebay.app.databinding.ActivityMainBinding
-import com.piratebay.app.model.TorrentItem
+import androidx.core.widget.doAfterTextChanged
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -243,6 +243,17 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
+        binding.searchEditText.doAfterTextChanged { text ->
+            binding.clearSearchButton.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+        }
+
+        binding.clearSearchButton.setOnClickListener {
+            binding.searchEditText.text?.clear()
+            binding.searchEditText.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.showSoftInput(binding.searchEditText, InputMethodManager.SHOW_IMPLICIT)
+        }
+
         binding.swipeRefreshLayout.setOnRefreshListener {
             viewModel.refresh()
         }
@@ -262,6 +273,16 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 launch {
+                    viewModel.qualityChips.collect { chips ->
+                        renderQualityChips(chips, viewModel.selectedQualityChip.value)
+                    }
+                }
+                launch {
+                    viewModel.selectedQualityChip.collect { selected ->
+                        renderQualityChips(viewModel.qualityChips.value, selected)
+                    }
+                }
+                launch {
                     viewModel.eventFlow.collect { event ->
                         when (event) {
                             is SingleEvent.ShowToast -> Toast.makeText(this@MainActivity, event.message, Toast.LENGTH_SHORT).show()
@@ -269,6 +290,53 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun renderQualityChips(chips: List<String>, selectedChip: String?) {
+        if (chips.isEmpty()) {
+            binding.qualityChipsScrollView.visibility = View.GONE
+            binding.qualityChipsContainer.removeAllViews()
+            return
+        }
+
+        binding.qualityChipsScrollView.visibility = View.VISIBLE
+        binding.qualityChipsContainer.removeAllViews()
+
+        for (chip in chips) {
+            val isSelected = (chip == selectedChip)
+            val chipBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
+                text = chip
+                textSize = 11f
+                isAllCaps = false
+                includeFontPadding = false
+                minHeight = 0
+                minWidth = 0
+                setPadding(dpToPx(10), 0, dpToPx(10), 0)
+
+                val layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    dpToPx(28)
+                ).apply {
+                    marginEnd = dpToPx(6)
+                }
+                this.layoutParams = layoutParams
+
+                if (isSelected) {
+                    setBackgroundResource(R.drawable.quality_chip_selected)
+                    setTextColor(android.graphics.Color.parseColor("#0B131E"))
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                } else {
+                    setBackgroundResource(R.drawable.quality_chip_unselected)
+                    setTextColor(androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+                    typeface = android.graphics.Typeface.DEFAULT
+                }
+
+                setOnClickListener {
+                    viewModel.selectQualityChip(chip)
+                }
+            }
+            binding.qualityChipsContainer.addView(chipBtn)
         }
     }
 
@@ -296,10 +364,11 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.visibility = View.GONE
                 binding.errorView.visibility = View.GONE
                 binding.torrentsRecyclerView.visibility = View.VISIBLE
+                val filterSuffix = if (viewModel.selectedQualityChip.value != null) " · [${viewModel.selectedQualityChip.value}]" else ""
                 if (state.isFuzzyMatched && state.effectiveQuery.isNotBlank()) {
-                    binding.statusSummaryTextView.text = "智能匹配 \"${state.effectiveQuery}\" · 找到 ${state.torrents.size} 条结果"
+                    binding.statusSummaryTextView.text = "智能匹配 \"${state.effectiveQuery}\"$filterSuffix · 找到 ${state.torrents.size} 条结果"
                 } else {
-                    binding.statusSummaryTextView.text = "找到 ${state.torrents.size} 条资源结果"
+                    binding.statusSummaryTextView.text = "找到 ${state.torrents.size} 条资源结果$filterSuffix"
                 }
                 adapter.submitList(state.torrents)
             }
